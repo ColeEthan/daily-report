@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>工作日报</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+    background: #f5f5f7;
+    color: #1d1d1f;
+    min-height: 100vh;
+    padding: 0 0 100px 0;
+  }
+  .header {
+    background: linear-gradient(135deg, #007AFF, #5856d6);
+    color: white;
+    padding: 20px 16px 16px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .header h1 { font-size: 20px; font-weight: 600; }
+  .header .date { font-size: 14px; opacity: 0.85; margin-top: 4px; }
+
+  .input-area {
+    padding: 16px;
+    background: white;
+    margin: 12px;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+  .input-area label { font-size: 14px; color: #86868b; display: block; margin-bottom: 8px; }
+  .time-row {
+    display: flex; gap: 8px; margin-bottom: 10px;
+  }
+  .time-row input {
+    flex: 1;
+    padding: 10px 12px;
+    border: 1px solid #d2d2d7;
+    border-radius: 8px;
+    font-size: 16px;
+    text-align: center;
+    -webkit-appearance: none;
+  }
+  .input-area textarea {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #d2d2d7;
+    border-radius: 8px;
+    font-size: 16px;
+    resize: none;
+    height: 60px;
+    font-family: inherit;
+    -webkit-appearance: none;
+  }
+  .input-area textarea:focus, .time-row input:focus {
+    outline: none;
+    border-color: #007AFF;
+    box-shadow: 0 0 0 3px rgba(0,122,255,0.15);
+  }
+  .btn-add {
+    display: block;
+    width: 100%;
+    padding: 12px;
+    margin-top: 10px;
+    background: #007AFF;
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn-add:active { background: #0066d6; transform: scale(0.98); }
+
+  .list-area {
+    padding: 0 12px;
+  }
+  .list-area h2 {
+    font-size: 15px;
+    color: #86868b;
+    margin: 16px 4px 8px;
+  }
+  .entry-card {
+    background: white;
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin-bottom: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    animation: slideIn 0.2s ease;
+  }
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .entry-card .text { font-size: 15px; flex: 1; line-height: 1.4; }
+  .entry-card .delete {
+    color: #ff3b30;
+    font-size: 20px;
+    padding: 4px 8px;
+    margin-left: 8px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .entry-card .index {
+    color: #007AFF;
+    font-weight: 600;
+    margin-right: 10px;
+    font-size: 15px;
+    min-width: 24px;
+  }
+
+  .bottom-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: rgba(255,255,255,0.92);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    padding: 12px 16px;
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+    display: flex;
+    gap: 10px;
+    box-shadow: 0 -1px 10px rgba(0,0,0,0.06);
+  }
+  .btn-gen {
+    flex: 1;
+    padding: 14px;
+    background: #34c759;
+    color: white;
+    border: none;
+    border-radius: 12px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn-gen:active { background: #2db84d; }
+  .btn-clear {
+    padding: 14px 20px;
+    background: #ff3b30;
+    color: white;
+    border: none;
+    border-radius: 12px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn-clear:active { background: #d63027; }
+
+  .preview-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 200;
+    align-items: flex-end;
+    justify-content: center;
+  }
+  .preview-overlay.show { display: flex; }
+  .preview-box {
+    background: white;
+    width: 100%;
+    max-height: 80vh;
+    border-radius: 16px 16px 0 0;
+    padding: 20px 16px;
+    padding-bottom: max(20px, env(safe-area-inset-bottom));
+    overflow-y: auto;
+    animation: slideUp 0.25s ease;
+  }
+  @keyframes slideUp {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+  }
+  .preview-box h3 { font-size: 17px; margin-bottom: 12px; text-align: center; }
+  .preview-box pre {
+    background: #f5f5f7;
+    padding: 14px;
+    border-radius: 10px;
+    font-size: 14px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-all;
+    font-family: inherit;
+  }
+  .preview-actions {
+    display: flex; gap: 10px; margin-top: 14px;
+  }
+  .preview-actions button {
+    flex: 1; padding: 12px; border: none; border-radius: 10px;
+    font-size: 16px; font-weight: 600; cursor: pointer;
+  }
+  .btn-copy { background: #007AFF; color: white; }
+  .btn-close { background: #e5e5ea; color: #1d1d1f; }
+
+  .empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: #86868b;
+  }
+  .empty-state .icon { font-size: 48px; margin-bottom: 12px; }
+  .empty-state p { font-size: 15px; line-height: 1.5; }
+
+  .history-btn {
+    display: block;
+    margin: 16px auto 0;
+    padding: 8px 20px;
+    background: transparent;
+    color: #007AFF;
+    border: 1px solid #007AFF;
+    border-radius: 20px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+
+  .history-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 200;
+    align-items: flex-end;
+    justify-content: center;
+  }
+  .history-overlay.show { display: flex; }
+  .history-box {
+    background: white;
+    width: 100%;
+    max-height: 85vh;
+    border-radius: 16px 16px 0 0;
+    padding: 20px 16px;
+    padding-bottom: max(20px, env(safe-area-inset-bottom));
+    overflow-y: auto;
+  }
+  .history-box h3 { font-size: 17px; margin-bottom: 12px; text-align: center; }
+  .history-item {
+    padding: 10px 14px;
+    background: #f5f5f7;
+    border-radius: 8px;
+    margin-bottom: 8px;
+    font-size: 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .history-item .actions { display: flex; gap: 6px; }
+  .history-item .actions button {
+    padding: 4px 10px; border: none; border-radius: 6px;
+    font-size: 13px; cursor: pointer;
+  }
+  .btn-view { background: #007AFF; color: white; }
+  .btn-del { background: #ff3b30; color: white; }
+  .btn-hclose {
+    display: block; margin: 16px auto 0; padding: 12px 40px;
+    background: #e5e5ea; border: none; border-radius: 10px;
+    font-size: 16px; font-weight: 600; cursor: pointer;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>📋 工作日报</h1>
+  <div class="date" id="todayDate"></div>
+</div>
+
+<div class="input-area">
+  <label>时间范围</label>
+  <div class="time-row">
+    <input type="text" id="timeStart" placeholder="开始 如 8:00" inputmode="decimal">
+    <input type="text" id="timeEnd" placeholder="结束 如 9:30" inputmode="decimal">
+  </div>
+  <label>工作内容</label>
+  <textarea id="workContent" placeholder="做了什么事情..."></textarea>
+  <button class="btn-add" onclick="addEntry()">➕ 添加记录</button>
+</div>
+
+<div class="list-area">
+  <h2>今日记录</h2>
+  <div id="entryList"></div>
+  <button class="history-btn" onclick="showHistory()">📅 历史记录</button>
+</div>
+
+<div class="bottom-bar">
+  <button class="btn-gen" onclick="generateReport()">📋 生成汇报</button>
+  <button class="btn-clear" onclick="clearToday()">🗑️</button>
+</div>
+
+<!-- 预览弹窗 -->
+<div class="preview-overlay" id="previewOverlay">
+  <div class="preview-box">
+    <h3>📋 汇报预览</h3>
+    <pre id="previewText"></pre>
+    <div class="preview-actions">
+      <button class="btn-close" onclick="closePreview()">关闭</button>
+      <button class="btn-copy" onclick="copyReport()">📋 复制到剪贴板</button>
+    </div>
+  </div>
+</div>
+
+<!-- 历史弹窗 -->
+<div class="history-overlay" id="historyOverlay">
+  <div class="history-box">
+    <h3>📅 历史记录</h3>
+    <div id="historyList"></div>
+    <button class="btn-hclose" onclick="closeHistory()">关闭</button>
+  </div>
+</div>
+
+<script>
+// ========== 数据管理 ==========
+const STORAGE_KEY = 'daily_report';
+
+function getToday() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function getTodayDisplay() {
+  const d = new Date();
+  return `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`;
+}
+
+function getAllData() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); }
+  catch { return {}; }
+}
+
+function saveData(data) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+}
+
+function getTodayEntries() {
+  const data = getAllData();
+  return data[getToday()] || [];
+}
+
+function saveTodayEntries(entries) {
+  const data = getAllData();
+  data[getToday()] = entries;
+  saveData(data);
+}
+
+// ========== 记录操作 ==========
+function addEntry() {
+  const start = document.getElementById('timeStart').value.trim();
+  const end = document.getElementById('timeEnd').value.trim();
+  const content = document.getElementById('workContent').value.trim();
+
+  if (!content) {
+    alert('请输入工作内容');
+    return;
+  }
+
+  let timeStr = '';
+  if (start && end) {
+    timeStr = `${start}-${end}`;
+  } else if (start) {
+    timeStr = start;
+  }
+
+  const entries = getTodayEntries();
+  entries.push({ time: timeStr, content: content });
+  saveTodayEntries(entries);
+
+  // 清空输入
+  document.getElementById('timeStart').value = '';
+  document.getElementById('timeEnd').value = '';
+  document.getElementById('workContent').value = '';
+  document.getElementById('timeStart').focus();
+
+  renderEntries();
+}
+
+function deleteEntry(index) {
+  if (!confirm('删除这条记录？')) return;
+  const entries = getTodayEntries();
+  entries.splice(index, 1);
+  saveTodayEntries(entries);
+  renderEntries();
+}
+
+function clearToday() {
+  const entries = getTodayEntries();
+  if (entries.length === 0) return;
+  if (!confirm(`清除今天全部 ${entries.length} 条记录？`)) return;
+  saveTodayEntries([]);
+  renderEntries();
+}
+
+// ========== 渲染 ==========
+function renderEntries() {
+  const entries = getTodayEntries();
+  const list = document.getElementById('entryList');
+
+  if (entries.length === 0) {
+    list.innerHTML = `
+      <div class="empty-state">
+        <div class="icon">📝</div>
+        <p>还没有记录<br>完成一项工作后点上面添加</p>
+      </div>`;
+    return;
+  }
+
+  list.innerHTML = entries.map((e, i) => `
+    <div class="entry-card">
+      <span class="index">${i + 1}</span>
+      <span class="text">${e.time ? `<b>${e.time}</b> ` : ''}${escapeHtml(e.content)}</span>
+      <span class="delete" onclick="deleteEntry(${i})">×</span>
+    </div>
+  `).join('');
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// ========== 生成汇报 ==========
+function generateReport() {
+  const entries = getTodayEntries();
+  if (entries.length === 0) {
+    alert('今天还没有记录');
+    return;
+  }
+
+  let report = `${getTodayDisplay()}\n`;
+  report += `高翔工作汇报\n`;
+  entries.forEach((e, i) => {
+    const time = e.time ? `${e.time}，` : '';
+    // 移除末尾标点，统一加句号
+    let content = e.content.replace(/[。.，,；;]+$/g, '');
+    report += `${i + 1}，${time}${content}。\n`;
+  });
+
+  document.getElementById('previewText').textContent = report;
+  document.getElementById('previewOverlay').classList.add('show');
+}
+
+function copyReport() {
+  const text = document.getElementById('previewText').textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    alert('✅ 已复制到剪贴板！\n打开微信群粘贴发送即可');
+    closePreview();
+  }).catch(() => {
+    // fallback
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    alert('✅ 已复制到剪贴板！');
+    closePreview();
+  });
+}
+
+function closePreview() {
+  document.getElementById('previewOverlay').classList.remove('show');
+}
+
+// ========== 历史记录 ==========
+function showHistory() {
+  const data = getAllData();
+  const dates = Object.keys(data).sort().reverse();
+  const list = document.getElementById('historyList');
+
+  if (dates.length === 0) {
+    list.innerHTML = '<div class="empty-state"><p>暂无历史记录</p></div>';
+  } else {
+    list.innerHTML = dates.map(d => {
+      const count = data[d].length;
+      return `
+        <div class="history-item">
+          <span>${d}（${count}条）</span>
+          <div class="actions">
+            <button class="btn-view" onclick="viewHistory('${d}')">查看</button>
+            <button class="btn-del" onclick="deleteHistory('${d}')">删除</button>
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  document.getElementById('historyOverlay').classList.add('show');
+}
+
+function viewHistory(date) {
+  const data = getAllData();
+  const entries = data[date] || [];
+
+  let report = `${date.replace(/-/g, '年').replace(/年(\d+)月(\d+)日?/, '年$1月$2日')}\n`;
+  // 格式化日期
+  const parts = date.split('-');
+  report = `${parts[0]}年${parseInt(parts[1])}月${parseInt(parts[2])}日\n`;
+  report += `高翔工作汇报\n`;
+  entries.forEach((e, i) => {
+    const time = e.time ? `${e.time}，` : '';
+    let content = e.content.replace(/[。.，,；;]+$/g, '');
+    report += `${i + 1}，${time}${content}。\n`;
+  });
+
+  document.getElementById('previewText').textContent = report;
+  document.getElementById('previewOverlay').classList.add('show');
+  closeHistory();
+}
+
+function deleteHistory(date) {
+  if (!confirm(`删除 ${date} 的记录？`)) return;
+  const data = getAllData();
+  delete data[date];
+  saveData(data);
+  showHistory();
+}
+
+function closeHistory() {
+  document.getElementById('historyOverlay').classList.remove('show');
+}
+
+// ========== 初始化 ==========
+document.getElementById('todayDate').textContent = getTodayDisplay();
+renderEntries();
+
+// 点击遮罩关闭
+document.getElementById('previewOverlay').addEventListener('click', function(e) {
+  if (e.target === this) closePreview();
+});
+document.getElementById('historyOverlay').addEventListener('click', function(e) {
+  if (e.target === this) closeHistory();
+});
+
+// 回车快速添加
+document.getElementById('workContent').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    addEntry();
+  }
+});
+</script>
+</body>
+</html>
