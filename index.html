@@ -277,8 +277,8 @@
 <div class="input-area">
   <label>时间范围</label>
   <div class="time-row">
-    <input type="text" id="timeStart" placeholder="开始 如 8:00" inputmode="decimal">
-    <input type="text" id="timeEnd" placeholder="结束 如 9:30" inputmode="decimal">
+    <input type="time" id="timeStart" placeholder="开始 如 8:00">
+    <input type="time" id="timeEnd" placeholder="结束 如 9:30">
   </div>
   <label>工作内容</label>
   <textarea id="workContent" placeholder="做了什么事情..."></textarea>
@@ -352,9 +352,16 @@ function saveTodayEntries(entries) {
 }
 
 // ========== 记录操作 ==========
+function formatTime(t) {
+  // "08:00" -> "8:00", "14:30" -> "14:30"
+  if (!t) return '';
+  const [h, m] = t.split(':');
+  return `${parseInt(h)}:${m}`;
+}
+
 function addEntry() {
-  const start = document.getElementById('timeStart').value.trim();
-  const end = document.getElementById('timeEnd').value.trim();
+  const start = formatTime(document.getElementById('timeStart').value);
+  const end = formatTime(document.getElementById('timeEnd').value);
   const content = document.getElementById('workContent').value.trim();
 
   if (!content) {
