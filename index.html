@@ -57,6 +57,7 @@
     font-family: inherit;
     -webkit-appearance: none;
   }
+  #userName:focus,
   .input-area textarea:focus, .time-row input:focus {
     outline: none;
     border-color: #007AFF;
@@ -275,6 +276,8 @@
 </div>
 
 <div class="input-area">
+  <label>姓名</label>
+  <input type="text" id="userName" placeholder="输入姓名，如：高翔" style="width:100%;padding:10px 12px;border:1px solid #d2d2d7;border-radius:8px;font-size:16px;margin-bottom:10px;appearance:none;-webkit-appearance:none;">
   <label>时间范围</label>
   <div class="time-row">
     <input type="time" id="timeStart" placeholder="开始 如 8:00">
@@ -349,6 +352,14 @@ function saveTodayEntries(entries) {
   const data = getAllData();
   data[getToday()] = entries;
   saveData(data);
+}
+
+function getUserName() {
+  return localStorage.getItem('daily_report_name') || '工作汇报';
+}
+
+function saveUserName(name) {
+  localStorage.setItem('daily_report_name', name);
 }
 
 // ========== 记录操作 ==========
@@ -443,7 +454,7 @@ function generateReport() {
   }
 
   let report = `${getTodayDisplay()}\n`;
-  report += `高翔工作汇报\n`;
+  report += `${getUserName()}工作汇报\n`;
   entries.forEach((e, i) => {
     const time = e.time ? `${e.time}，` : '';
     // 移除末尾标点，统一加句号
@@ -510,7 +521,7 @@ function viewHistory(date) {
   // 格式化日期
   const parts = date.split('-');
   report = `${parts[0]}年${parseInt(parts[1])}月${parseInt(parts[2])}日\n`;
-  report += `高翔工作汇报\n`;
+  report += `${getUserName()}工作汇报\n`;
   entries.forEach((e, i) => {
     const time = e.time ? `${e.time}，` : '';
     let content = e.content.replace(/[。.，,；;]+$/g, '');
@@ -536,6 +547,10 @@ function closeHistory() {
 
 // ========== 初始化 ==========
 document.getElementById('todayDate').textContent = getTodayDisplay();
+document.getElementById('userName').value = getUserName();
+document.getElementById('userName').addEventListener('change', function() {
+  saveUserName(this.value.trim() || '工作汇报');
+});
 renderEntries();
 
 // 点击遮罩关闭
