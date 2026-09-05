@@ -49,6 +49,90 @@ async function add(app, text) { await enter(app, text); await app.elements.entry
 function action(app, index, label) {
   return app.elements.entryList.children[index].children[2].children.find(node => node.textContent === label);
 }
+test('duration shortcuts calculate from start without accumulating and persist the draft', async () => {
+  const app = setup();
+  await app.elements.duration30.fire('click');
+  assert.equal(app.elements.timeEnd.value, '');
+  assert.match(app.elements.timeFeedback.textContent, /请先填写开始时间/);
+  app.elements.timeStart.value = '10:00';
+  await enter(app, '调试');
+  for (const [minutes, expected] of [[15, '10:15'], [30, '10:30'], [60, '11:00'], [120, '12:00'], [30, '10:30']]) {
+    await app.elements[`duration${minutes}`].fire('click');
+    assert.equal(app.elements.timeEnd.value, expected);
+    assert.equal(app.saved().drafts['2026-09-05'].end, expected);
+  }
+  const restored = setup(Object.fromEntries(app.values));
+  assert.equal(restored.elements.timeStart.value, '10:00');
+  assert.equal(restored.elements.timeEnd.value, '10:30');
+  assert.equal(restored.elements.workContent.value, '调试');
+});
+test('shortcuts mark overnight ranges and do not carry a next-day end into the same report date', async () => {
+  const app = setup();
+  app.elements.timeStart.value = '23:45';
+  await app.elements.duration15.fire('click');
+  assert.equal(app.elements.timeEnd.value, '00:00');
+  assert.equal(app.elements.nextDay.checked, true);
+  await add(app, '夜间维护');
+  assert.equal(app.saved().reports['2026-09-05'].entries[0].nextDay, true);
+  assert.equal(app.elements.timeStart.value, '');
+  app.elements.timeStart.value = '10:00';
+  app.elements.nextDay.checked = true;
+  await app.elements.duration60.fire('click');
+  assert.equal(app.elements.nextDay.checked, false);
+});
+test('next entry continues from the saved end; clearing time preserves content and allows untimed work', async () => {
+  const app = setup({}, { confirm: false });
+  app.elements.timeStart.value = '09:00';
+  await app.elements.duration60.fire('click');
+  await add(app, '第一项');
+  assert.equal(app.elements.timeStart.value, '10:00');
+  assert.equal(app.elements.timeEnd.value, '');
+  assert.equal(app.elements.workContent.value, '');
+  // A time-only continuation must not block report generation with a draft prompt.
+  await app.elements.generateButton.fire('click');
+  assert.equal(app.elements.previewDialog.open, true);
+  await enter(app, '不计时工作');
+  await app.elements.clearTimeButton.fire('click');
+  assert.equal(app.elements.workContent.value, '不计时工作');
+  const restored = setup(Object.fromEntries(app.values));
+  assert.equal(restored.elements.timeStart.value, '');
+  await restored.elements.entryForm.fire('submit');
+  assert.equal(restored.saved().reports['2026-09-05'].entries[1].start, '');
+});
+test('now uses the local clock, protects historical dates, and refuses reversed ranges', async () => {
+  const app = setup();
+  app.tick('2026-09-05T08:37:55');
+  await app.elements.startNowButton.fire('click');
+  assert.equal(app.elements.timeStart.value, '08:37');
+  app.tick('2026-09-05T09:08:25');
+  await app.elements.endNowButton.fire('click');
+  assert.equal(app.elements.timeEnd.value, '09:08');
+  app.elements.timeStart.value = '18:00';
+  await app.elements.endNowButton.fire('click');
+  assert.equal(app.elements.timeEnd.value, '09:08');
+  assert.match(app.elements.timeFeedback.textContent, /不晚于开始时间/);
+  app.elements.reportDate.value = '2026-09-04';
+  await app.elements.reportDate.fire('change');
+  assert.equal(app.elements.startNowButton.disabled, true);
+  await app.elements.startNowButton.fire('click');
+  assert.equal(app.elements.timeStart.value, '');
+});
+test('editing an existing timed record never creates a continuation or overwrites its draft', async () => {
+  const app = setup();
+  app.elements.timeStart.value = '08:00';
+  await app.elements.duration60.fire('click');
+  await add(app, '已有记录');
+  await action(app, 0, '编辑').fire('click');
+  assert.equal(app.elements.timeStart.value, '08:00');
+  await app.elements.duration120.fire('click');
+  const restored = setup(Object.fromEntries(app.values));
+  assert.equal(restored.elements.timeStart.value, '08:00');
+  assert.equal(restored.elements.timeEnd.value, '10:00');
+  await restored.elements.entryForm.fire('submit');
+  assert.equal(restored.saved().reports['2026-09-05'].entries.length, 1);
+  assert.equal(restored.saved().reports['2026-09-05'].entries[0].end, '10:00');
+  assert.equal(restored.elements.timeStart.value, '');
+});
 test('unfinished input survives reload and Chinese Enter cannot submit', async () => {
   const app = setup();
   await enter(app, '正在输入中文');
