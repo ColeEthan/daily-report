@@ -2,10 +2,13 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="description" content="随手记录每日工作，编辑补录、自动保存草稿，一键生成日报与备份。">
 <title>工作日报</title>
+<script src="core.js" defer></script>
+<script src="app.js" defer></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -266,308 +269,133 @@
     background: #e5e5ea; border: none; border-radius: 10px;
     font-size: 16px; font-weight: 600; cursor: pointer;
   }
+
+  [hidden] { display: none !important; }
+  body { font-size: 16px; padding-bottom: calc(110px + env(safe-area-inset-bottom)); }
+  .header { padding-top: max(20px, env(safe-area-inset-top)); }
+  .header-inner, main, .bottom-inner { width: 100%; max-width: 760px; margin: 0 auto; }
+  .header-inner, .bottom-inner { display: flex; align-items: center; gap: 12px; }
+  .header-inner { justify-content: space-between; }
+  .header-action { border: 1px solid rgba(255,255,255,.6); border-radius: 8px; padding: 10px; background: transparent; color: white; font-size: 14px; }
+  button, input, textarea { font: inherit; }
+  button { cursor: pointer; min-height: 44px; }
+  button:disabled { cursor: default; opacity: .5; }
+  button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px solid #5856d6; outline-offset: 3px; }
+  .input-area label { color: #606068; }
+  #userName, #reportDate { width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid #d2d2d7; border-radius: 8px; background: white; color: inherit; }
+  #userName { margin-bottom: 16px; }
+  .date-row { display: flex; align-items: flex-end; gap: 12px; }
+  .date-row > div { flex: 1; min-width: 0; }
+  .text-button { padding: 8px; background: transparent; border: 0; color: #0066d6; white-space: nowrap; }
+  .hint { color: #606068; font-size: 14px; line-height: 1.5; }
+  #dateHint { margin: 8px 0 16px; }
+  .time-row > div { flex: 1; min-width: 0; }
+  .time-row input { width: 100%; min-width: 0; min-height: 44px; background: white; color: inherit; }
+  .checkbox-label { display: flex !important; align-items: center; gap: 8px; min-height: 44px; margin-bottom: 12px !important; }
+  .checkbox-label input { width: 20px; height: 20px; accent-color: #007aff; }
+  .input-area textarea { min-height: 96px; height: auto; max-height: 320px; line-height: 1.6; resize: vertical; }
+  .form-footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px; color: #606068; font-size: 14px; line-height: 1.5; margin-top: 8px; }
+  .shortcut { font-size: 12px; }
+  .cancel-edit { width: 100%; border: 0; background: #eef4ff; color: #0066d6; border-radius: 8px; margin-top: 8px; }
+  .section-heading { display: flex; justify-content: space-between; align-items: center; margin: 16px 4px 8px; }
+  .section-heading h2 { margin: 0; color: #606068; font-size: 16px; }
+  .entry-card { align-items: flex-start; }
+  .entry-card .text { font-size: 16px; min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; line-height: 1.6; }
+  .entry-card .index { padding-top: 3px; }
+  .entry-actions { display: flex; flex-direction: column; gap: 4px; margin-left: 8px; }
+  .entry-actions button { background: transparent; border: 0; padding: 6px 10px; color: #0066d6; font-size: 14px; }
+  .entry-actions .delete-action { color: #c6271e; }
+  .entry-card.editing { box-shadow: 0 0 0 2px #007aff; }
+  .btn-clear { background: #fff0ee; color: #b42318; padding: 14px 12px; font-size: 14px; }
+  .btn-clear:active { background: #ffdcd7; }
+  .bottom-inner { align-items: stretch; }
+  .notice { margin: 12px; padding: 12px; border: 1px solid #e7b04b; background: #fff6dc; border-radius: 10px; line-height: 1.6; color: #744700; overflow-wrap: anywhere; }
+  dialog { width: min(100%, 760px); max-height: 85dvh; margin: auto auto 0; padding: 0; border: 0; border-radius: 16px 16px 0 0; color: #1d1d1f; }
+  dialog::backdrop { background: rgba(0,0,0,.5); }
+  .dialog-content { padding: 20px 16px max(20px, env(safe-area-inset-bottom)); }
+  dialog h3 { font-size: 18px; margin-bottom: 16px; text-align: center; }
+  #previewText { background: #f5f5f7; padding: 14px; border-radius: 10px; font-size: 16px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; font-family: inherit; }
+  #manualCopy { width: 100%; min-height: 180px; margin-top: 12px; padding: 12px; font-size: 16px; }
+  .history-item { gap: 12px; flex-wrap: wrap; font-size: 16px; }
+  .history-item .actions { flex-wrap: wrap; }
+  .history-item .actions button { font-size: 14px; min-width: 44px; }
+  .backup-description, #importSummary { line-height: 1.7; }
+  .file-label { display: block; font-size: 14px; margin: 20px 0 8px; }
+  #importFile { width: 100%; font-size: 14px; }
+  #backupStatus { margin-top: 10px; }
+  .import-preview { padding: 12px; margin-top: 16px; border-radius: 8px; background: #eef4ff; }
+  .error-text { color: #b42318; margin-top: 12px; line-height: 1.6; }
+  @media (min-width: 800px) { main { padding-top: 8px; } dialog { margin: auto; border-radius: 16px; } }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; scroll-behavior: auto !important; } }
 </style>
 </head>
 <body>
-
-<div class="header">
-  <h1>📋 工作日报</h1>
-  <div class="date" id="todayDate"></div>
-</div>
-
-<div class="input-area">
-  <label>姓名</label>
-  <input type="text" id="userName" placeholder="输入姓名，如：高翔" style="width:100%;padding:10px 12px;border:1px solid #d2d2d7;border-radius:8px;font-size:16px;margin-bottom:10px;appearance:none;-webkit-appearance:none;">
-  <label>时间范围</label>
-  <div class="time-row">
-    <input type="time" id="timeStart" placeholder="开始 如 8:00">
-    <input type="time" id="timeEnd" placeholder="结束 如 9:30">
+<header class="header">
+  <div class="header-inner">
+    <div><h1>📋 工作日报</h1><div class="date" id="todayDate"></div></div>
+    <button type="button" id="backupButton" class="header-action">备份与恢复</button>
   </div>
-  <label>工作内容</label>
-  <textarea id="workContent" placeholder="做了什么事情..."></textarea>
-  <button class="btn-add" onclick="addEntry()">➕ 添加记录</button>
-</div>
-
-<div class="list-area">
-  <h2>今日记录</h2>
-  <div id="entryList"></div>
-  <button class="history-btn" onclick="showHistory()">📅 历史记录</button>
-</div>
-
-<div class="bottom-bar">
-  <button class="btn-gen" onclick="generateReport()">📋 生成汇报</button>
-  <button class="btn-clear" onclick="clearToday()">🗑️</button>
-</div>
-
-<!-- 预览弹窗 -->
-<div class="preview-overlay" id="previewOverlay">
-  <div class="preview-box">
-    <h3>📋 汇报预览</h3>
-    <pre id="previewText"></pre>
-    <div class="preview-actions">
-      <button class="btn-close" onclick="closePreview()">关闭</button>
-      <button class="btn-copy" onclick="copyReport()">📋 复制到剪贴板</button>
+</header>
+<main>
+  <div id="notice" class="notice" role="alert" hidden></div>
+  <section class="input-area" aria-label="填写日报">
+    <div class="date-row">
+      <div><label for="reportDate">记录日期</label><input type="date" id="reportDate" required></div>
+      <button type="button" id="todayButton" class="text-button">回到今天</button>
     </div>
+    <p id="dateHint" class="hint"></p>
+    <form id="entryForm">
+      <label for="userName">姓名</label>
+      <input type="text" id="userName" maxlength="100" autocomplete="name" placeholder="输入姓名（可不填）">
+      <div class="time-row">
+        <div><label for="timeStart">开始时间（选填）</label><input type="time" id="timeStart"></div>
+        <div><label for="timeEnd">结束时间（选填）</label><input type="time" id="timeEnd"></div>
+      </div>
+      <label class="checkbox-label" for="nextDay"><input type="checkbox" id="nextDay">次日结束（跨夜工作）</label>
+      <p id="legacyHint" class="hint" hidden></p>
+      <label for="workContent">工作内容</label>
+      <textarea id="workContent" maxlength="20000" placeholder="做了什么事情…回车可换行"></textarea>
+      <div class="form-footer"><span id="saveStatus" role="status" aria-live="polite">记录保存在当前浏览器</span><span class="shortcut">Ctrl / ⌘ + Enter 提交</span></div>
+      <button type="submit" class="btn-add" id="saveEntryButton">＋ 添加记录</button>
+      <button type="button" class="cancel-edit" id="cancelEditButton" hidden>取消编辑，保留原记录</button>
+    </form>
+  </section>
+  <section class="list-area" aria-labelledby="listTitle">
+    <div class="section-heading"><h2 id="listTitle">今日记录</h2><span id="entryCount" class="hint"></span></div>
+    <div id="entryList"></div>
+    <button type="button" class="history-btn" id="historyButton">📅 历史记录</button>
+  </section>
+</main>
+<div class="bottom-bar"><div class="bottom-inner">
+  <button type="button" class="btn-gen" id="generateButton">📋 生成汇报</button>
+  <button type="button" class="btn-clear" id="clearButton">清空当日</button>
+</div></div>
+<dialog id="previewDialog" aria-labelledby="previewTitle">
+  <div class="dialog-content"><h3 id="previewTitle">📋 汇报预览</h3>
+    <pre id="previewText" tabindex="0"></pre>
+    <p id="copyHint" class="hint" role="status" hidden></p>
+    <textarea id="manualCopy" aria-label="手动复制汇报" readonly hidden></textarea>
+    <div class="preview-actions"><button type="button" class="btn-close" data-close="previewDialog">关闭</button><button type="button" class="btn-copy" id="copyButton">复制到剪贴板</button></div>
   </div>
-</div>
-
-<!-- 历史弹窗 -->
-<div class="history-overlay" id="historyOverlay">
-  <div class="history-box">
-    <h3>📅 历史记录</h3>
+</dialog>
+<dialog id="historyDialog" aria-labelledby="historyTitle">
+  <div class="dialog-content"><h3 id="historyTitle">📅 历史记录</h3>
     <div id="historyList"></div>
-    <button class="btn-hclose" onclick="closeHistory()">关闭</button>
+    <button type="button" class="btn-hclose" data-close="historyDialog">关闭</button>
   </div>
-</div>
-
-<script>
-// ========== 数据管理 ==========
-const STORAGE_KEY = 'daily_report';
-
-function getToday() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-}
-
-function getTodayDisplay() {
-  const d = new Date();
-  return `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`;
-}
-
-function getAllData() {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); }
-  catch { return {}; }
-}
-
-function saveData(data) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-}
-
-function getTodayEntries() {
-  const data = getAllData();
-  return data[getToday()] || [];
-}
-
-function saveTodayEntries(entries) {
-  const data = getAllData();
-  data[getToday()] = entries;
-  saveData(data);
-}
-
-function getUserName() {
-  return localStorage.getItem('daily_report_name') || '工作汇报';
-}
-
-function saveUserName(name) {
-  localStorage.setItem('daily_report_name', name);
-}
-
-// ========== 记录操作 ==========
-function formatTime(t) {
-  // "08:00" -> "8:00", "14:30" -> "14:30"
-  if (!t) return '';
-  const [h, m] = t.split(':');
-  return `${parseInt(h)}:${m}`;
-}
-
-function addEntry() {
-  const start = formatTime(document.getElementById('timeStart').value);
-  const end = formatTime(document.getElementById('timeEnd').value);
-  const content = document.getElementById('workContent').value.trim();
-
-  if (!content) {
-    alert('请输入工作内容');
-    return;
-  }
-
-  let timeStr = '';
-  if (start && end) {
-    timeStr = `${start}-${end}`;
-  } else if (start) {
-    timeStr = start;
-  }
-
-  const entries = getTodayEntries();
-  entries.push({ time: timeStr, content: content });
-  saveTodayEntries(entries);
-
-  // 清空输入
-  document.getElementById('timeStart').value = '';
-  document.getElementById('timeEnd').value = '';
-  document.getElementById('workContent').value = '';
-  document.getElementById('timeStart').focus();
-
-  renderEntries();
-}
-
-function deleteEntry(index) {
-  if (!confirm('删除这条记录？')) return;
-  const entries = getTodayEntries();
-  entries.splice(index, 1);
-  saveTodayEntries(entries);
-  renderEntries();
-}
-
-function clearToday() {
-  const entries = getTodayEntries();
-  if (entries.length === 0) return;
-  if (!confirm(`清除今天全部 ${entries.length} 条记录？`)) return;
-  saveTodayEntries([]);
-  renderEntries();
-}
-
-// ========== 渲染 ==========
-function renderEntries() {
-  const entries = getTodayEntries();
-  const list = document.getElementById('entryList');
-
-  if (entries.length === 0) {
-    list.innerHTML = `
-      <div class="empty-state">
-        <div class="icon">📝</div>
-        <p>还没有记录<br>完成一项工作后点上面添加</p>
-      </div>`;
-    return;
-  }
-
-  list.innerHTML = entries.map((e, i) => `
-    <div class="entry-card">
-      <span class="index">${i + 1}</span>
-      <span class="text">${e.time ? `<b>${e.time}</b> ` : ''}${escapeHtml(e.content)}</span>
-      <span class="delete" onclick="deleteEntry(${i})">×</span>
-    </div>
-  `).join('');
-}
-
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
-
-// ========== 生成汇报 ==========
-function generateReport() {
-  const entries = getTodayEntries();
-  if (entries.length === 0) {
-    alert('今天还没有记录');
-    return;
-  }
-
-  let report = `${getTodayDisplay()}\n`;
-  report += `${getUserName()}工作汇报\n`;
-  entries.forEach((e, i) => {
-    const time = e.time ? `${e.time}，` : '';
-    // 移除末尾标点，统一加句号
-    let content = e.content.replace(/[。.，,；;]+$/g, '');
-    report += `${i + 1}，${time}${content}。\n`;
-  });
-
-  document.getElementById('previewText').textContent = report;
-  document.getElementById('previewOverlay').classList.add('show');
-}
-
-function copyReport() {
-  const text = document.getElementById('previewText').textContent;
-  navigator.clipboard.writeText(text).then(() => {
-    alert('✅ 已复制到剪贴板！\n打开微信群粘贴发送即可');
-    closePreview();
-  }).catch(() => {
-    // fallback
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand('copy');
-    document.body.removeChild(ta);
-    alert('✅ 已复制到剪贴板！');
-    closePreview();
-  });
-}
-
-function closePreview() {
-  document.getElementById('previewOverlay').classList.remove('show');
-}
-
-// ========== 历史记录 ==========
-function showHistory() {
-  const data = getAllData();
-  const dates = Object.keys(data).sort().reverse();
-  const list = document.getElementById('historyList');
-
-  if (dates.length === 0) {
-    list.innerHTML = '<div class="empty-state"><p>暂无历史记录</p></div>';
-  } else {
-    list.innerHTML = dates.map(d => {
-      const count = data[d].length;
-      return `
-        <div class="history-item">
-          <span>${d}（${count}条）</span>
-          <div class="actions">
-            <button class="btn-view" onclick="viewHistory('${d}')">查看</button>
-            <button class="btn-del" onclick="deleteHistory('${d}')">删除</button>
-          </div>
-        </div>`;
-    }).join('');
-  }
-
-  document.getElementById('historyOverlay').classList.add('show');
-}
-
-function viewHistory(date) {
-  const data = getAllData();
-  const entries = data[date] || [];
-
-  let report = `${date.replace(/-/g, '年').replace(/年(\d+)月(\d+)日?/, '年$1月$2日')}\n`;
-  // 格式化日期
-  const parts = date.split('-');
-  report = `${parts[0]}年${parseInt(parts[1])}月${parseInt(parts[2])}日\n`;
-  report += `${getUserName()}工作汇报\n`;
-  entries.forEach((e, i) => {
-    const time = e.time ? `${e.time}，` : '';
-    let content = e.content.replace(/[。.，,；;]+$/g, '');
-    report += `${i + 1}，${time}${content}。\n`;
-  });
-
-  document.getElementById('previewText').textContent = report;
-  document.getElementById('previewOverlay').classList.add('show');
-  closeHistory();
-}
-
-function deleteHistory(date) {
-  if (!confirm(`删除 ${date} 的记录？`)) return;
-  const data = getAllData();
-  delete data[date];
-  saveData(data);
-  showHistory();
-}
-
-function closeHistory() {
-  document.getElementById('historyOverlay').classList.remove('show');
-}
-
-// ========== 初始化 ==========
-document.getElementById('todayDate').textContent = getTodayDisplay();
-document.getElementById('userName').value = getUserName();
-document.getElementById('userName').addEventListener('change', function() {
-  saveUserName(this.value.trim() || '工作汇报');
-});
-renderEntries();
-
-// 点击遮罩关闭
-document.getElementById('previewOverlay').addEventListener('click', function(e) {
-  if (e.target === this) closePreview();
-});
-document.getElementById('historyOverlay').addEventListener('click', function(e) {
-  if (e.target === this) closeHistory();
-});
-
-// 回车快速添加
-document.getElementById('workContent').addEventListener('keydown', function(e) {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    addEntry();
-  }
-});
-</script>
+</dialog>
+<dialog id="backupDialog" aria-labelledby="backupTitle">
+  <div class="dialog-content"><h3 id="backupTitle">备份与恢复</h3>
+    <p class="backup-description">日报保存在当前浏览器。换手机或清除网站数据前，请导出备份并妥善保存。</p>
+    <button type="button" class="btn-add" id="exportButton">导出全部日报与草稿</button>
+    <p id="backupStatus" class="hint" role="status"></p>
+    <label class="file-label" for="importFile">选择备份文件（JSON，最大 10 MB）</label>
+    <input type="file" id="importFile" accept=".json,application/json">
+    <div id="importPreview" class="import-preview" hidden><p id="importSummary"></p><button type="button" class="btn-add" id="confirmImportButton">确认合并恢复</button></div>
+    <p id="backupError" class="error-text" role="alert" hidden></p>
+    <button type="button" class="btn-hclose" data-close="backupDialog">关闭</button>
+  </div>
+</dialog>
+<script nomodule>document.body.insertAdjacentHTML('afterbegin', '<p>请使用支持现代 JavaScript 的浏览器打开工作日报。</p>');</script>
 </body>
 </html>
