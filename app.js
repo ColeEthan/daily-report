@@ -20,7 +20,7 @@
     unsaved = true;
     saveForm();
   }
-  function fillDuration(minutes) {
+  function fillDuration(minutes, accumulate = false) {
     if (recoveryMode) return;
     const start = $('timeStart').value;
     if (!start) {
@@ -29,11 +29,26 @@
       return;
     }
     const [hours, mins] = start.split(':').map(Number);
-    const total = hours * 60 + mins + minutes;
+    const startMinutes = hours * 60 + mins;
+    let base = startMinutes;
+    const currentEnd = $('timeEnd').value;
+    if (accumulate && currentEnd) {
+      try { C.validateRange(start, currentEnd, $('nextDay').checked); }
+      catch (error) { $('timeFeedback').textContent = error.message; return; }
+      const [endHours, endMins] = currentEnd.split(':').map(Number);
+      base = endHours * 60 + endMins + ($('nextDay').checked ? 1440 : 0);
+    }
+    const total = base + minutes;
+    if (total >= 2880) {
+      $('timeFeedback').textContent = '结束时间将超过次日，请分成两条记录。';
+      return;
+    }
     const end = `${String(Math.floor(total / 60) % 24).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
     $('timeEnd').value = end;
     $('nextDay').checked = total >= 1440;
-    saveTimeChange(`已填写 ${minutes} 分钟：${start}–${total >= 1440 ? '次日' : ''}${end}。`);
+    const elapsed = total - startMinutes;
+    const duration = elapsed >= 60 ? `${Math.floor(elapsed / 60)}小时${elapsed % 60 ? `${elapsed % 60}分钟` : ''}` : `${elapsed}分钟`;
+    saveTimeChange(`${accumulate ? `已增加 ${minutes} 分钟，累计` : '已填写'}${duration}：${start}–${total >= 1440 ? '次日' : ''}${end}。`);
   }
   function fillNow(field) {
     if (recoveryMode) return;
@@ -142,7 +157,7 @@
     $('saveEntryButton').textContent = editingId ? '保存修改' : '＋ 添加记录';
     $('cancelEditButton').hidden = !editingId;
     $('saveStatus').textContent = draft ? (editingId ? '已恢复编辑草稿' : '已恢复上次草稿') : '记录保存在当前浏览器';
-    $('timeFeedback').textContent = selectedDate === C.today() ? '填好开始时间，再点时长即可填写结束时间。' : '补录可使用快捷时长；“现在”仅用于今天。';
+    $('timeFeedback').textContent = selectedDate === C.today() ? '选好时长后，可点“＋30分钟”继续累加。' : '补录也可用“＋30分钟”累加；“现在”仅用于今天。';
     resizeText();
     updateDate();
   }
@@ -436,7 +451,7 @@
     } catch (error) { backupError(`恢复失败：${errorMessage(error)}`); }
   }
   function setRecoveryControls() {
-    ['userName', 'timeStart', 'timeEnd', 'nextDay', 'workContent', 'saveEntryButton', 'reportDate', 'historyButton', 'todayButton', 'clearTimeButton', ...durationMinutes.map(minutes => `duration${minutes}`)].forEach(id => { $(id).disabled = recoveryMode; });
+    ['userName', 'timeStart', 'timeEnd', 'nextDay', 'workContent', 'saveEntryButton', 'reportDate', 'historyButton', 'todayButton', 'clearTimeButton', 'durationAdd30', ...durationMinutes.map(minutes => `duration${minutes}`)].forEach(id => { $(id).disabled = recoveryMode; });
   }
 
   try {
@@ -460,6 +475,7 @@
   $('endNowButton').addEventListener('click', () => fillNow('timeEnd'));
   $('clearTimeButton').addEventListener('click', clearTime);
   durationMinutes.forEach(minutes => $(`duration${minutes}`).addEventListener('click', () => fillDuration(minutes)));
+  $('durationAdd30').addEventListener('click', () => fillDuration(30, true));
   ['userName', 'timeStart', 'timeEnd', 'nextDay', 'workContent'].forEach(id => {
     $(id).addEventListener('input', () => {
       if (id === 'timeStart' || id === 'timeEnd' || id === 'nextDay') {
