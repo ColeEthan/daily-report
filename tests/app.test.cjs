@@ -80,6 +80,47 @@ test('shortcuts mark overnight ranges and do not carry a next-day end into the s
   await app.elements.duration60.fire('click');
   assert.equal(app.elements.nextDay.checked, false);
 });
+test('the extra +30 option accumulates across reloads while fixed duration options still reset', async () => {
+  const app = setup();
+  await app.elements.durationAdd30.fire('click');
+  assert.equal(app.elements.timeEnd.value, '');
+  app.elements.timeStart.value = '10:00';
+  await app.elements.duration30.fire('click');
+  await app.elements.durationAdd30.fire('click');
+  assert.equal(app.elements.timeEnd.value, '11:00');
+  assert.match(app.elements.timeFeedback.textContent, /累计1小时/);
+  const restored = setup(Object.fromEntries(app.values));
+  await restored.elements.durationAdd30.fire('click');
+  assert.equal(restored.elements.timeEnd.value, '11:30');
+  await restored.elements.duration30.fire('click');
+  assert.equal(restored.elements.timeEnd.value, '10:30');
+  restored.elements.timeEnd.value = '';
+  await restored.elements.durationAdd30.fire('click');
+  assert.equal(restored.elements.timeEnd.value, '10:30');
+});
+test('+30 preserves overnight meaning and refuses invalid or unrepresentable end times', async () => {
+  const app = setup();
+  app.elements.timeStart.value = '23:15';
+  await app.elements.duration30.fire('click');
+  await app.elements.durationAdd30.fire('click');
+  assert.equal(app.elements.timeEnd.value, '00:15');
+  assert.equal(app.elements.nextDay.checked, true);
+  await app.elements.durationAdd30.fire('click');
+  assert.equal(app.elements.timeEnd.value, '00:45');
+  assert.equal(app.elements.nextDay.checked, true);
+  assert.match(app.elements.timeFeedback.textContent, /累计1小时30分钟/);
+  app.elements.timeEnd.value = '23:45';
+  const before = app.values.get(C.STORAGE_KEY);
+  await app.elements.durationAdd30.fire('click');
+  assert.equal(app.elements.timeEnd.value, '23:45');
+  assert.equal(app.values.get(C.STORAGE_KEY), before);
+  assert.match(app.elements.timeFeedback.textContent, /超过次日/);
+  app.elements.timeEnd.value = '09:00';
+  app.elements.nextDay.checked = false;
+  await app.elements.durationAdd30.fire('click');
+  assert.equal(app.elements.timeEnd.value, '09:00');
+  assert.match(app.elements.timeFeedback.textContent, /结束时间应晚于开始时间/);
+});
 test('next entry continues from the saved end; clearing time preserves content and allows untimed work', async () => {
   const app = setup({}, { confirm: false });
   app.elements.timeStart.value = '09:00';

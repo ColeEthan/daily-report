@@ -8,7 +8,7 @@
 <meta name="description" content="随手记录每日工作，编辑补录、自动保存草稿，一键生成日报与备份。">
 <title>工作日报</title>
 <script src="core.js" defer></script>
-<script src="app.js?v=20260905-time1" defer></script>
+<script src="app.js?v=20260905-add30" defer></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -298,6 +298,7 @@
   .duration-buttons { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
   .duration-buttons button { min-width: 0; padding: 8px 4px; border: 1px solid #c2d8f5; border-radius: 8px; background: #eef4ff; color: #005bbb; font-size: 14px; }
   .duration-buttons button:active { background: #d8e8ff; }
+  .duration-buttons .duration-add { grid-column: 1 / -1; border-style: dashed; background: white; font-weight: 600; }
   #timeFeedback { margin: 8px 0 0; }
   @media (max-width: 350px) { .time-label { flex-wrap: wrap; } }
   .checkbox-label { display: flex !important; align-items: center; gap: 8px; min-height: 44px; margin-bottom: 12px !important; }
@@ -366,8 +367,9 @@
         <button type="button" id="duration30">30分钟</button>
         <button type="button" id="duration60">1小时</button>
         <button type="button" id="duration120">2小时</button>
+        <button type="button" id="durationAdd30" class="duration-add">＋30分钟（累计增加）</button>
       </div>
-      <p id="timeFeedback" class="hint" role="status" aria-live="polite">填好开始时间，再点时长即可填写结束时间。</p>
+      <p id="timeFeedback" class="hint" role="status" aria-live="polite">选好时长后，可点“＋30分钟”继续累加。</p>
       <label class="checkbox-label" for="nextDay"><input type="checkbox" id="nextDay">次日结束（跨夜工作）</label>
       <p id="legacyHint" class="hint" hidden></p>
       <label for="workContent">工作内容</label>
