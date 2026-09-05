@@ -11,6 +11,54 @@
   let unsaved = false;
   let pendingImport = null;
   let composing = false;
+  const durationMinutes = [15, 30, 60, 120];
+
+  function saveTimeChange(message) {
+    legacyTime = '';
+    $('legacyHint').hidden = true;
+    $('timeFeedback').textContent = message;
+    unsaved = true;
+    saveForm();
+  }
+  function fillDuration(minutes) {
+    if (recoveryMode) return;
+    const start = $('timeStart').value;
+    if (!start) {
+      $('timeFeedback').textContent = '请先填写开始时间，也可以点开始时间旁的“现在”。';
+      $('timeStart').focus();
+      return;
+    }
+    const [hours, mins] = start.split(':').map(Number);
+    const total = hours * 60 + mins + minutes;
+    const end = `${String(Math.floor(total / 60) % 24).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+    $('timeEnd').value = end;
+    $('nextDay').checked = total >= 1440;
+    saveTimeChange(`已填写 ${minutes} 分钟：${start}–${total >= 1440 ? '次日' : ''}${end}。`);
+  }
+  function fillNow(field) {
+    if (recoveryMode) return;
+    const now = new Date();
+    if (selectedDate !== C.today(now)) {
+      $('timeFeedback').textContent = '补录日期请填写当日实际时间，“现在”仅用于今天。';
+      return;
+    }
+    const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    // Do not reinterpret an earlier end time as an overnight shift without intent.
+    if (field === 'timeEnd' && $('timeStart').value && time <= $('timeStart').value) {
+      $('timeFeedback').textContent = '当前时刻不晚于开始时间，请检查开始时间或手动填写结束时间。';
+      return;
+    }
+    $(field).value = time;
+    if (field === 'timeEnd') $('nextDay').checked = false;
+    saveTimeChange(`已将${field === 'timeStart' ? '开始' : '结束'}时间填为 ${time}。`);
+  }
+  function clearTime() {
+    if (recoveryMode) return;
+    $('timeStart').value = '';
+    $('timeEnd').value = '';
+    $('nextDay').checked = false;
+    saveTimeChange('时间已清空，可以只记录工作内容。');
+  }
 
   function notice(message) {
     $('notice').textContent = message;
@@ -74,6 +122,10 @@
     $('dateHint').textContent = selectedDate === today ? '正在记录今天的工作' : `当前记录日期：${C.displayDate(selectedDate)}。提交和删除均作用于这一天。`;
     $('todayButton').hidden = selectedDate === today;
     $('listTitle').textContent = selectedDate === today ? '今日记录' : `${C.displayDate(selectedDate)}的记录`;
+    ['startNowButton', 'endNowButton'].forEach(id => {
+      $(id).disabled = recoveryMode || selectedDate !== today;
+      $(id).title = selectedDate === today ? '填入当前时刻' : '补录日期请填写当日实际时间';
+    });
   }
   function loadForm() {
     const report = state.reports[selectedDate];
@@ -90,6 +142,7 @@
     $('saveEntryButton').textContent = editingId ? '保存修改' : '＋ 添加记录';
     $('cancelEditButton').hidden = !editingId;
     $('saveStatus').textContent = draft ? (editingId ? '已恢复编辑草稿' : '已恢复上次草稿') : '记录保存在当前浏览器';
+    $('timeFeedback').textContent = selectedDate === C.today() ? '填好开始时间，再点时长即可填写结束时间。' : '补录可使用快捷时长；“现在”仅用于今天。';
     resizeText();
     updateDate();
   }
@@ -163,16 +216,19 @@
         entries[index] = entry;
       } else entries.push(entry);
       delete next.drafts[selectedDate];
+      const continueAt = !editingId && !entry.nextDay && !entry.legacyTime && entry.end;
+      if (continueAt) next.drafts[selectedDate] = { entryId: null, start: continueAt, end: '', nextDay: false, content: '', legacyTime: '' };
       if (!commit(next)) return;
       loadForm();
       renderEntries();
       $('saveStatus').textContent = '记录已保存';
+      if (continueAt) $('timeFeedback').textContent = `下一条从 ${continueAt} 开始，可修改或清空时间。`;
     } catch (error) { notice(errorMessage(error)); }
   }
   function editEntry(id) {
     if (editingId === id) { $('workContent').focus(); return; }
     if (!saveForm()) return;
-    if (hasDraft(captureDraft()) && !confirm('当前有未提交草稿。放弃这份草稿并编辑所选记录？')) return;
+    if ((editingId || $('workContent').value.trim()) && !confirm('当前有未提交草稿。放弃这份草稿并编辑所选记录？')) return;
     const entry = state.reports[selectedDate]?.entries.find(item => item.id === id);
     if (!entry) return;
     const next = C.clone(state);
@@ -215,7 +271,7 @@
     if (!saveForm()) return;
     const report = state.reports[date];
     if (!report?.entries.length) return;
-    if (date === selectedDate && hasDraft(captureDraft()) && !confirm('当前草稿尚未添加到记录。先生成已保存记录的汇报？')) return;
+    if (date === selectedDate && (editingId || $('workContent').value.trim()) && !confirm('当前草稿尚未添加到记录。先生成已保存记录的汇报？')) return;
     $('previewText').textContent = C.buildReport(date, report);
     $('copyHint').hidden = true;
     $('manualCopy').hidden = true;
@@ -263,7 +319,8 @@
       row.className = 'history-item';
       const label = document.createElement('span');
       const count = state.reports[date]?.entries.length || 0;
-      label.textContent = `${date}（${count} 条${state.drafts[date] ? '，有草稿' : ''}）`;
+      const draft = state.drafts[date];
+      label.textContent = `${date}（${count} 条${draft && (draft.entryId || draft.content.trim()) ? '，有草稿' : ''}）`;
       const actions = document.createElement('div');
       actions.className = 'actions';
       const view = button('查看', 'btn-view', () => showReport(date));
@@ -379,7 +436,7 @@
     } catch (error) { backupError(`恢复失败：${errorMessage(error)}`); }
   }
   function setRecoveryControls() {
-    ['userName', 'timeStart', 'timeEnd', 'nextDay', 'workContent', 'saveEntryButton', 'reportDate', 'historyButton', 'todayButton'].forEach(id => { $(id).disabled = recoveryMode; });
+    ['userName', 'timeStart', 'timeEnd', 'nextDay', 'workContent', 'saveEntryButton', 'reportDate', 'historyButton', 'todayButton', 'clearTimeButton', ...durationMinutes.map(minutes => `duration${minutes}`)].forEach(id => { $(id).disabled = recoveryMode; });
   }
 
   try {
@@ -399,11 +456,16 @@
   $('entryForm').addEventListener('submit', submitEntry);
   $('reportDate').addEventListener('change', () => switchDate($('reportDate').value));
   $('todayButton').addEventListener('click', () => switchDate(C.today()));
+  $('startNowButton').addEventListener('click', () => fillNow('timeStart'));
+  $('endNowButton').addEventListener('click', () => fillNow('timeEnd'));
+  $('clearTimeButton').addEventListener('click', clearTime);
+  durationMinutes.forEach(minutes => $(`duration${minutes}`).addEventListener('click', () => fillDuration(minutes)));
   ['userName', 'timeStart', 'timeEnd', 'nextDay', 'workContent'].forEach(id => {
     $(id).addEventListener('input', () => {
       if (id === 'timeStart' || id === 'timeEnd' || id === 'nextDay') {
         legacyTime = '';
         $('legacyHint').hidden = true;
+        $('timeFeedback').textContent = '时间已修改；可点击时长重新计算结束时间。';
       }
       resizeText();
       // Synchronous draft persistence also covers immediate app switches and reloads.
