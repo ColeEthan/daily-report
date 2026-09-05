@@ -8,7 +8,7 @@
 <meta name="description" content="随手记录每日工作，编辑补录、自动保存草稿，一键生成日报与备份。">
 <title>工作日报</title>
 <script src="core.js" defer></script>
-<script src="app.js" defer></script>
+<script src="app.js?v=20260905-time1" defer></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -291,6 +291,15 @@
   #dateHint { margin: 8px 0 16px; }
   .time-row > div { flex: 1; min-width: 0; }
   .time-row input { width: 100%; min-width: 0; min-height: 44px; background: white; color: inherit; }
+  .time-label { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
+  .time-label label { margin-bottom: 0; }
+  .time-now { min-width: 44px; padding: 6px; border: 0; background: transparent; color: #0066d6; font-size: 14px; }
+  .duration-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; }
+  .duration-buttons { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+  .duration-buttons button { min-width: 0; padding: 8px 4px; border: 1px solid #c2d8f5; border-radius: 8px; background: #eef4ff; color: #005bbb; font-size: 14px; }
+  .duration-buttons button:active { background: #d8e8ff; }
+  #timeFeedback { margin: 8px 0 0; }
+  @media (max-width: 350px) { .time-label { flex-wrap: wrap; } }
   .checkbox-label { display: flex !important; align-items: center; gap: 8px; min-height: 44px; margin-bottom: 12px !important; }
   .checkbox-label input { width: 20px; height: 20px; accent-color: #007aff; }
   .input-area textarea { min-height: 96px; height: auto; max-height: 320px; line-height: 1.6; resize: vertical; }
@@ -348,9 +357,17 @@
       <label for="userName">姓名</label>
       <input type="text" id="userName" maxlength="100" autocomplete="name" placeholder="输入姓名（可不填）">
       <div class="time-row">
-        <div><label for="timeStart">开始时间（选填）</label><input type="time" id="timeStart"></div>
-        <div><label for="timeEnd">结束时间（选填）</label><input type="time" id="timeEnd"></div>
+        <div><div class="time-label"><label for="timeStart">开始时间</label><button type="button" id="startNowButton" class="time-now" aria-label="开始时间填为现在">现在</button></div><input type="time" id="timeStart"></div>
+        <div><div class="time-label"><label for="timeEnd">结束时间</label><button type="button" id="endNowButton" class="time-now" aria-label="结束时间填为现在">现在</button></div><input type="time" id="timeEnd"></div>
       </div>
+      <div class="duration-heading"><span class="hint">工作时长（时间均可不填）</span><button type="button" id="clearTimeButton" class="time-now">清空时间</button></div>
+      <div class="duration-buttons" role="group" aria-label="按开始时间填写工作时长">
+        <button type="button" id="duration15">15分钟</button>
+        <button type="button" id="duration30">30分钟</button>
+        <button type="button" id="duration60">1小时</button>
+        <button type="button" id="duration120">2小时</button>
+      </div>
+      <p id="timeFeedback" class="hint" role="status" aria-live="polite">填好开始时间，再点时长即可填写结束时间。</p>
       <label class="checkbox-label" for="nextDay"><input type="checkbox" id="nextDay">次日结束（跨夜工作）</label>
       <p id="legacyHint" class="hint" hidden></p>
       <label for="workContent">工作内容</label>
