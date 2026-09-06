@@ -47,7 +47,7 @@
     if (!entry.start) return '';
     return shortTime(entry.start) + (entry.end ? `-${entry.nextDay ? '次日' : ''}${shortTime(entry.end)}` : '');
   }
-  function validateState(input) {
+  function validateState(input, { preserveInvalidTimes = false } = {}) {
     assert(isObject(input) && input.version === 2, '不支持的日报数据版本');
     assert(isObject(input.reports) && isObject(input.drafts), '日报数据结构不正确');
     const result = emptyState(text(input.preferredName, 100));
@@ -64,6 +64,18 @@
         ids.add(clean.id);
         assert(typeof clean.nextDay === 'boolean' && (!clean.start || timeValue(clean.start)) && (!clean.end || timeValue(clean.end)), '时间格式不正确');
         assert(clean.content.trim(), '记录内容不能为空');
+        if (!clean.legacyTime) {
+          try { validateRange(clean.start, clean.end, clean.nextDay); }
+          catch (error) {
+            if (!preserveInvalidTimes) throw new Error(`${date} 的记录时间不正确：${error.message}`);
+            // Existing stored data must remain readable after stricter validation.
+            // Keep every time component visible, without guessing the user's intent.
+            clean.legacyTime = `待核对：开始 ${clean.start || '未填'}，结束 ${clean.nextDay ? '次日 ' : ''}${clean.end || '未填'}`;
+            clean.start = '';
+            clean.end = '';
+            clean.nextDay = false;
+          }
+        }
         return clean;
       }) };
     }
@@ -103,12 +115,51 @@
   }
   function load(storage) {
     const raw = storage.getItem(STORAGE_KEY);
-    if (raw !== null) return { state: validateState(JSON.parse(raw)), raw };
+    if (raw !== null) {
+      const state = validateState(JSON.parse(raw), { preserveInvalidTimes: true });
+      const needsTimeReview = Object.values(state.reports).some(report => report.entries.some(entry => entry.legacyTime.startsWith('待核对：')));
+      return { state, raw, needsTimeReview };
+    }
     const legacy = storage.getItem(LEGACY_KEY);
     const name = storage.getItem(NAME_KEY) || '';
     return { state: migrateLegacy(legacy === null ? {} : JSON.parse(legacy), name), raw: null };
   }
-  function save(storage, state, expectedRaw) {
+  function createWriter(locks) {
+    let active = false, requesting = false, generation = 0, releaseLock = null;
+    return {
+      get active() { return active; },
+      async acquire(onStatus) {
+        if (active || requesting) return;
+        const requestGeneration = ++generation;
+        requesting = true;
+        try {
+          assert(locks && typeof locks.request === 'function', '当前浏览器无法安全协调多个页面，已开启只读模式。请使用新版浏览器通过 HTTPS 打开。');
+          await locks.request('daily-report:writer', { mode: 'exclusive', ifAvailable: true }, lock => {
+            if (requestGeneration !== generation) return;
+            requesting = false;
+            if (!lock) { onStatus('busy'); return; }
+            active = true;
+            // Hold the lock until pagehide/close. Draft writes stay synchronous,
+            // including the final input immediately before switching applications.
+            return new Promise(resolve => { releaseLock = resolve; onStatus('ready'); });
+          });
+        } catch (error) {
+          if (requestGeneration === generation) { active = false; onStatus('error', error); }
+        } finally {
+          if (requestGeneration === generation) { requesting = false; active = false; releaseLock = null; }
+        }
+      },
+      release() {
+        generation++;
+        active = false;
+        requesting = false;
+        if (releaseLock) releaseLock();
+        releaseLock = null;
+      }
+    };
+  }
+  function save(storage, state, expectedRaw, writer) {
+    assert(writer?.active, '当前页面为只读，无法保存。请关闭其他日报页面后刷新。');
     assert(storage.getItem(STORAGE_KEY) === expectedRaw, '另一个页面更新了日报，请先备份当前输入，再刷新页面');
     const raw = JSON.stringify(validateState(state));
     storage.setItem(STORAGE_KEY, raw);
@@ -192,5 +243,5 @@
     if (!state.preferredName) state.preferredName = incoming.preferredName;
     return { state: validateState(state), stats };
   }
-  return { STORAGE_KEY, LEGACY_KEY, NAME_KEY, clone, validDate, today, displayDate, id, emptyState, validateRange, entryTime, validateState, migrateLegacy, load, save, makeEntry, buildReport, exportBackup, parseBackup, mergeBackup };
+  return { STORAGE_KEY, LEGACY_KEY, NAME_KEY, clone, validDate, today, displayDate, id, emptyState, validateRange, entryTime, validateState, migrateLegacy, load, createWriter, save, makeEntry, buildReport, exportBackup, parseBackup, mergeBackup };
 });

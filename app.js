@@ -11,6 +11,8 @@
   let unsaved = false;
   let pendingImport = null;
   let composing = false;
+  const writer = C.createWriter(navigator.locks);
+  let needsTimeReview = false;
   const durationMinutes = [15, 30, 60, 120];
 
   function saveTimeChange(message) {
@@ -21,7 +23,7 @@
     saveForm();
   }
   function fillDuration(minutes, accumulate = false) {
-    if (recoveryMode) return;
+    if (recoveryMode || !writer.active) return;
     const start = $('timeStart').value;
     if (!start) {
       $('timeFeedback').textContent = '请先填写开始时间，也可以点开始时间旁的“现在”。';
@@ -51,7 +53,7 @@
     saveTimeChange(`${accumulate ? `已增加 ${minutes} 分钟，累计` : '已填写'}${duration}：${start}–${total >= 1440 ? '次日' : ''}${end}。`);
   }
   function fillNow(field) {
-    if (recoveryMode) return;
+    if (recoveryMode || !writer.active) return;
     const now = new Date();
     if (selectedDate !== C.today(now)) {
       $('timeFeedback').textContent = '补录日期请填写当日实际时间，“现在”仅用于今天。';
@@ -68,7 +70,7 @@
     saveTimeChange(`已将${field === 'timeStart' ? '开始' : '结束'}时间填为 ${time}。`);
   }
   function clearTime() {
-    if (recoveryMode) return;
+    if (recoveryMode || !writer.active) return;
     $('timeStart').value = '';
     $('timeEnd').value = '';
     $('nextDay').checked = false;
@@ -87,7 +89,7 @@
   function commit(next) {
     if (recoveryMode) { notice('原有数据无法读取，已停止写入。请在“备份与恢复”中导出原始数据或恢复有效备份。'); return false; }
     try {
-      raw = C.save(localStorage, next, raw);
+      raw = C.save(localStorage, next, raw, writer);
       state = next;
       unsaved = false;
       notice('');
@@ -118,7 +120,7 @@
     return next;
   }
   function saveForm() {
-    if (recoveryMode) return false;
+    if (recoveryMode || !writer.active) return false;
     const next = withForm();
     if (!unsaved && JSON.stringify(next) === JSON.stringify(state)) return true;
     const ok = commit(next);
@@ -138,7 +140,7 @@
     $('todayButton').hidden = selectedDate === today;
     $('listTitle').textContent = selectedDate === today ? '今日记录' : `${C.displayDate(selectedDate)}的记录`;
     ['startNowButton', 'endNowButton'].forEach(id => {
-      $(id).disabled = recoveryMode || selectedDate !== today;
+      $(id).disabled = recoveryMode || !writer.active || selectedDate !== today;
       $(id).title = selectedDate === today ? '填入当前时刻' : '补录日期请填写当日实际时间';
     });
   }
@@ -182,7 +184,7 @@
     list.replaceChildren();
     $('entryCount').textContent = `${entries.length} 条`;
     $('generateButton').disabled = recoveryMode || !entries.length;
-    $('clearButton').disabled = recoveryMode || !entries.length;
+    $('clearButton').disabled = recoveryMode || !writer.active || !entries.length;
     if (!entries.length) { list.append(emptyMessage('还没有记录，完成一项工作后在上方添加。')); return; }
     entries.forEach((entry, index) => {
       const card = document.createElement('div');
@@ -202,8 +204,10 @@
       const actions = document.createElement('div');
       actions.className = 'entry-actions';
       const edit = button('编辑', '', () => editEntry(entry.id));
+      edit.disabled = recoveryMode || !writer.active;
       edit.setAttribute('aria-label', `编辑第 ${index + 1} 条记录`);
       const remove = button('删除', 'delete-action', () => deleteEntry(entry.id));
+      remove.disabled = recoveryMode || !writer.active;
       remove.setAttribute('aria-label', `删除第 ${index + 1} 条记录`);
       actions.append(edit, remove);
       card.append(number, content, actions);
@@ -212,14 +216,14 @@
   }
   function switchDate(date) {
     if (!C.validDate(date)) { $('reportDate').value = selectedDate; return; }
-    if (!saveForm()) { $('reportDate').value = selectedDate; return; }
+    if (recoveryMode || (writer.active && !saveForm()) || (!writer.active && unsaved)) { $('reportDate').value = selectedDate; return; }
     selectedDate = date;
     loadForm();
     renderEntries();
   }
   function submitEntry(event) {
     event.preventDefault();
-    if (composing || event.isComposing || recoveryMode) return;
+    if (composing || event.isComposing || recoveryMode || !writer.active) return;
     try {
       const entry = C.makeEntry(captureDraft(), editingId || C.id());
       const next = withForm();
@@ -241,6 +245,7 @@
     } catch (error) { notice(errorMessage(error)); }
   }
   function editEntry(id) {
+    if (recoveryMode || !writer.active) return;
     if (editingId === id) { $('workContent').focus(); return; }
     if (!saveForm()) return;
     if ((editingId || $('workContent').value.trim()) && !confirm('当前有未提交草稿。放弃这份草稿并编辑所选记录？')) return;
@@ -254,15 +259,18 @@
     $('workContent').focus();
   }
   function cancelEdit() {
+    if (recoveryMode || !writer.active) return;
     if (!confirm('放弃这次修改？原记录会保留。')) return;
     const next = C.clone(state);
     delete next.drafts[selectedDate];
     if (commit(next)) { loadForm(); renderEntries(); }
   }
   function deleteEntry(id) {
-    if (!saveForm()) return;
+    if (recoveryMode || !writer.active) return;
     if (!confirm(`删除 ${C.displayDate(selectedDate)} 的这条记录？`)) return;
-    const next = C.clone(state);
+    // Persist the reduced state and current input in one write. An oversized
+    // intermediate draft must not prevent the user from freeing space.
+    const next = withForm();
     next.reports[selectedDate].entries = next.reports[selectedDate].entries.filter(entry => entry.id !== id);
     const wasEditing = next.drafts[selectedDate]?.entryId === id;
     // Keep an in-progress edit as a new draft rather than discard its text.
@@ -270,10 +278,10 @@
     if (commit(next)) { loadForm(); renderEntries(); }
   }
   function clearEntries() {
-    if (!saveForm()) return;
+    if (recoveryMode || !writer.active) return;
     const entries = state.reports[selectedDate]?.entries || [];
     if (!entries.length || !confirm(`清空 ${C.displayDate(selectedDate)} 的全部 ${entries.length} 条记录？当前草稿会保留。`)) return;
-    const next = C.clone(state);
+    const next = withForm();
     next.reports[selectedDate].entries = [];
     if (next.drafts[selectedDate]) next.drafts[selectedDate].entryId = null;
     if (commit(next)) { loadForm(); renderEntries(); }
@@ -283,7 +291,7 @@
     if (!dialog.open) dialog.showModal();
   }
   function showReport(date) {
-    if (!saveForm()) return;
+    if (recoveryMode || (writer.active && !saveForm())) return;
     const report = state.reports[date];
     if (!report?.entries.length) return;
     if (date === selectedDate && (editingId || $('workContent').value.trim()) && !confirm('当前草稿尚未添加到记录。先生成已保存记录的汇报？')) return;
@@ -319,7 +327,7 @@
     $('copyButton').textContent = copied ? '再次复制' : '重试复制';
   }
   function showHistory() {
-    if (!saveForm()) return;
+    if (recoveryMode) return;
     renderHistory();
     openDialog('historyDialog');
   }
@@ -340,22 +348,24 @@
       actions.className = 'actions';
       const view = button('查看', 'btn-view', () => showReport(date));
       view.disabled = !count;
-      actions.append(view, button('编辑 / 补录', 'btn-view', () => {
+      const remove = button('删除', 'btn-del', () => deleteHistory(date));
+      remove.disabled = recoveryMode || !writer.active;
+      actions.append(view, button(writer.active ? '编辑 / 补录' : '查看记录', 'btn-view', () => {
         switchDate(date);
         if (selectedDate === date) $('historyDialog').close();
-      }), button('删除', 'btn-del', () => deleteHistory(date)));
+      }), remove);
       row.append(label, actions);
       list.append(row);
     });
   }
   function deleteHistory(date) {
-    if (!saveForm()) return;
+    if (recoveryMode || !writer.active) return;
     if (!confirm(`删除 ${C.displayDate(date)} 的全部记录及草稿？`)) return;
-    const next = C.clone(state);
+    const next = withForm();
     delete next.reports[date];
     delete next.drafts[date];
     if (commit(next)) {
-      if (selectedDate === date) loadForm();
+      loadForm();
       renderEntries();
       renderHistory();
     }
@@ -376,7 +386,7 @@
     $('backupError').hidden = !message;
   }
   function showBackup() {
-    if (!recoveryMode) saveForm();
+    if (!recoveryMode && writer.active) saveForm();
     pendingImport = null;
     $('importPreview').hidden = true;
     $('importFile').value = '';
@@ -393,13 +403,14 @@
         download(`工作日报-原始数据-${stamp}.json`, JSON.stringify(original, null, 2));
       } else {
         // Include current unsaved input even when browser storage is unavailable/full.
-        download(`工作日报-备份-${stamp}.json`, C.exportBackup(withForm()));
+        download(`工作日报-备份-${stamp}.json`, C.exportBackup(writer.active || unsaved ? withForm() : state));
       }
       $('backupStatus').textContent = '已发起备份下载，请确认文件已保存。';
       backupError('');
     } catch (error) { backupError(`导出失败：${errorMessage(error)}`); }
   }
   async function previewImport() {
+    if (!writer.active) return;
     const file = $('importFile').files[0];
     pendingImport = null;
     $('importPreview').hidden = true;
@@ -425,14 +436,14 @@
     } catch (error) { backupError(`无法导入：${errorMessage(error)}。原有记录未改变。`); }
   }
   function confirmImport() {
-    if (!pendingImport) return;
+    if (!pendingImport || !writer.active) return;
     try {
       if (localStorage.getItem(C.STORAGE_KEY) !== pendingImport.raw || raw !== pendingImport.raw) throw new Error('数据已有变化，请重新选择备份文件以更新合并预览');
       if (pendingImport.recoveryMode) {
         // Preserve corrupt source before any replacement. If this fails, do not overwrite it.
         const original = { rawV2: localStorage.getItem(C.STORAGE_KEY), rawLegacy: localStorage.getItem(C.LEGACY_KEY), rawName: localStorage.getItem(C.NAME_KEY) };
         localStorage.setItem(`daily_report_recovery_${Date.now()}`, JSON.stringify(original));
-        const saved = C.save(localStorage, pendingImport.state, pendingImport.raw);
+        const saved = C.save(localStorage, pendingImport.state, pendingImport.raw, writer);
         raw = saved;
         state = pendingImport.state;
         recoveryMode = false;
@@ -451,22 +462,48 @@
     } catch (error) { backupError(`恢复失败：${errorMessage(error)}`); }
   }
   function setRecoveryControls() {
-    ['userName', 'timeStart', 'timeEnd', 'nextDay', 'workContent', 'saveEntryButton', 'reportDate', 'historyButton', 'todayButton', 'clearTimeButton', 'durationAdd30', ...durationMinutes.map(minutes => `duration${minutes}`)].forEach(id => { $(id).disabled = recoveryMode; });
+    ['userName', 'timeStart', 'timeEnd', 'nextDay', 'workContent', 'saveEntryButton', 'cancelEditButton', 'clearTimeButton', 'durationAdd30', ...durationMinutes.map(minutes => `duration${minutes}`)].forEach(id => { $(id).disabled = recoveryMode || !writer.active; });
+    ['reportDate', 'historyButton', 'todayButton'].forEach(id => { $(id).disabled = recoveryMode; });
+    ['importFile', 'confirmImportButton'].forEach(id => { $(id).disabled = !writer.active; });
   }
 
-  try {
-    const loaded = C.load(localStorage);
-    state = loaded.state;
-    raw = loaded.raw;
-  } catch (error) {
-    recoveryMode = true;
-    try { raw = localStorage.getItem(C.STORAGE_KEY); } catch { /* Browser denies access. */ }
-    notice(`原有数据无法读取，已停止写入以保护记录。请打开“备份与恢复”。${errorMessage(error)}`);
+  function readState() {
+    try {
+      const loaded = C.load(localStorage);
+      state = loaded.state;
+      raw = loaded.raw;
+      needsTimeReview = !!loaded.needsTimeReview;
+      recoveryMode = false;
+    } catch (error) {
+      recoveryMode = true;
+      try { raw = localStorage.getItem(C.STORAGE_KEY); } catch { /* Browser denies access. */ }
+      notice(`原有数据无法读取，已停止写入以保护记录。请打开“备份与恢复”。${errorMessage(error)}`);
+    }
   }
+  readState();
   setRecoveryControls();
   loadForm();
   renderEntries();
   if (recoveryMode) $('saveStatus').textContent = '数据读取失败，已停止写入';
+
+  function acquireWriter() {
+    writer.acquire((status, error) => {
+      pendingImport = null;
+      $('importPreview').hidden = true;
+      if (status === 'ready' && !unsaved) {
+        // Data may have changed while waiting for the browser to grant the lock.
+        readState();
+        loadForm();
+      }
+      setRecoveryControls();
+      renderEntries();
+      if ($('historyDialog').open) renderHistory();
+      if (!recoveryMode) {
+        if (status === 'ready') notice(needsTimeReview ? '部分旧记录的时间需要核对，已保留原时间文字。可编辑这些记录后重新填写时间。' : '');
+        else notice(error?.message || '另一个日报页面正在编辑，当前页面为只读，可查看和导出备份。请关闭其他日报页面后刷新以继续编辑。');
+      }
+    });
+  }
 
   $('entryForm').addEventListener('submit', submitEntry);
   $('reportDate').addEventListener('change', () => switchDate($('reportDate').value));
@@ -512,8 +549,20 @@
     if (unsaved) { event.preventDefault(); event.returnValue = ''; }
   });
   window.addEventListener('storage', event => {
-    if (event.key === C.STORAGE_KEY || event.key === null) notice('另一个页面更新了日报。当前页面已暂停覆盖保存，请先导出当前输入，再刷新查看最新记录。');
+    if (event.key !== C.STORAGE_KEY && event.key !== null) return;
+    if (!writer.active && !unsaved) { readState(); loadForm(); setRecoveryControls(); renderEntries(); if ($('historyDialog').open) renderHistory(); }
+    if (!recoveryMode) notice(writer.active ? '另一个页面更新了日报。请先导出当前输入，再关闭旧版页面并刷新查看最新记录。' : '另一个日报页面正在编辑，当前页面为只读，记录已更新。请关闭其他日报页面后刷新以继续编辑。');
   });
+  window.addEventListener('pagehide', () => {
+    if (writer.active && !recoveryMode) saveForm();
+    writer.release();
+    pendingImport = null;
+    $('importPreview').hidden = true;
+    setRecoveryControls();
+    renderEntries();
+    if ($('historyDialog').open) renderHistory();
+  });
+  window.addEventListener('pageshow', event => { if (event.persisted) acquireWriter(); });
   function checkDate() {
     // Keep every action bound to the displayed date; midnight must never retarget a deletion.
     updateDate();
@@ -524,4 +573,5 @@
     if (document.visibilityState === 'visible') checkDate();
   });
   setInterval(checkDate, 30000);
+  acquireWriter();
 })();

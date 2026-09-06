@@ -1,6 +1,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const C = require('../core.js');
+const { fakeLocks } = require('./helpers.cjs');
+const writer = C.createWriter(fakeLocks());
+writer.acquire(() => {});
+const save = (db, state, raw) => C.save(db, state, raw, writer);
 const date = '2026-09-05';
 const entry = (id = 'one', content = '调试摄像头') => ({ id, start: '08:00', end: '09:30', nextDay: false, content, legacyTime: '' });
 function sample() {
@@ -18,7 +22,7 @@ test('legacy migration preserves content, name and unusual time strings without 
   const loaded = C.load(db);
   assert.equal(loaded.state.reports[date].entries[0].content, '布线\n测试');
   assert.equal(C.entryTime(loaded.state.reports[date].entries[1]), '18:00-8:00');
-  C.save(db, loaded.state, loaded.raw);
+  save(db, loaded.state, loaded.raw);
   assert.equal(db.getItem('daily_report'), legacy);
   assert.equal(C.load(db).state.reports[date].name, '张工');
 });
@@ -31,12 +35,12 @@ test('corrupted data does not silently fall back to empty or legacy records', ()
 });
 test('storage quota and concurrent changes never overwrite the last saved records', () => {
   const db = storage();
-  const raw = C.save(db, sample(), null);
+  const raw = save(db, sample(), null);
   db.setItem(C.STORAGE_KEY, 'other tab');
-  assert.throws(() => C.save(db, C.emptyState(), raw), /另一个页面/);
+  assert.throws(() => save(db, C.emptyState(), raw), /另一个页面/);
   assert.equal(db.getItem(C.STORAGE_KEY), 'other tab');
   db.setItem = () => { throw Object.assign(new Error('full'), { name: 'QuotaExceededError' }); };
-  assert.throws(() => C.save(db, sample(), 'other tab'), { name: 'QuotaExceededError' });
+  assert.throws(() => save(db, sample(), 'other tab'), { name: 'QuotaExceededError' });
 });
 test('time validation distinguishes omitted, incomplete, reversed and explicit overnight ranges', () => {
   assert.doesNotThrow(() => C.validateRange('', '', false));
