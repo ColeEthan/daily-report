@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const { setup, enter, add, action, C } = require('./helpers.cjs');
 test('duration shortcuts calculate from start without accumulating and persist the draft', async () => {
   const app = setup();
+  await app.elements.clearTimeButton.fire('click');
   await app.elements.duration30.fire('click');
   assert.equal(app.elements.timeEnd.value, '');
   assert.match(app.elements.timeFeedback.textContent, /请先填写开始时间/);
@@ -34,6 +35,7 @@ test('shortcuts mark overnight ranges and do not carry a next-day end into the s
 });
 test('the extra +30 option accumulates across reloads while fixed duration options still reset', async () => {
   const app = setup();
+  await app.elements.clearTimeButton.fire('click');
   await app.elements.durationAdd30.fire('click');
   assert.equal(app.elements.timeEnd.value, '');
   app.elements.timeStart.value = '10:00';
@@ -108,7 +110,45 @@ test('now uses the local clock, protects historical dates, and refuses reversed 
   await app.elements.reportDate.fire('change');
   assert.equal(app.elements.startNowButton.disabled, true);
   await app.elements.startNowButton.fire('click');
-  assert.equal(app.elements.timeStart.value, '');
+  assert.equal(app.elements.timeStart.value, '08:00');
+});
+
+test('a fresh date defaults to 08:00 without creating empty history or draft records', async () => {
+  const app = setup();
+  assert.equal(app.elements.timeStart.value, '08:00');
+  assert.equal(app.values.get(C.STORAGE_KEY), undefined);
+  app.elements.reportDate.value = '2026-09-04';
+  await app.elements.reportDate.fire('change');
+  assert.equal(app.elements.timeStart.value, '08:00');
+  await app.elements.todayButton.fire('click');
+  assert.equal(app.values.get(C.STORAGE_KEY), undefined);
+  await app.elements.duration60.fire('click');
+  await add(app, '上午第一项');
+  assert.equal(app.saved().reports['2026-09-05'].entries[0].start, '08:00');
+  assert.equal(app.elements.timeStart.value, '09:00');
+  app.tick('2026-09-06T08:00:00');
+  await app.elements.todayButton.fire('click');
+  assert.equal(app.elements.timeStart.value, '08:00');
+  assert.equal(app.saved().drafts['2026-09-05'].start, '09:00');
+});
+
+test('clearing the default before typing survives reload and allows untimed records', async () => {
+  const app = setup();
+  await app.elements.clearTimeButton.fire('click');
+  const restored = setup(Object.fromEntries(app.values));
+  assert.equal(restored.elements.timeStart.value, '');
+  await add(restored, '不填写时间');
+  assert.equal(restored.saved().reports['2026-09-05'].entries[0].start, '');
+  await action(restored, 0, '编辑').fire('click');
+  assert.equal(restored.elements.timeStart.value, '');
+});
+
+test('saved custom start times are restored instead of replaced by the daily default', async () => {
+  const app = setup();
+  app.elements.timeStart.value = '10:30';
+  await app.elements.timeStart.fire('input');
+  const restored = setup(Object.fromEntries(app.values));
+  assert.equal(restored.elements.timeStart.value, '10:30');
 });
 test('editing an existing timed record never creates a continuation or overwrites its draft', async () => {
   const app = setup();

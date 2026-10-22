@@ -110,12 +110,16 @@
     const next = C.clone(base);
     const name = $('userName').value.trim();
     const draft = captureDraft();
+    // A displayed default alone is not a draft or a reason to create a report.
+    const defaultOnly = !base.drafts[selectedDate] && !base.reports[selectedDate]?.entries.length &&
+      draft.start === '08:00' && !draft.end && !draft.nextDay && !draft.content && !draft.entryId && !draft.legacyTime;
     next.preferredName = name;
-    if (next.reports[selectedDate] || name || hasDraft(draft)) {
+    if (next.reports[selectedDate] || name || (!defaultOnly && hasDraft(draft))) {
       next.reports[selectedDate] ||= { name, entries: [] };
       next.reports[selectedDate].name = name;
     }
-    if (hasDraft(draft)) next.drafts[selectedDate] = draft;
+    // An explicit empty draft remembers that the user cleared the default time.
+    if (!defaultOnly && (hasDraft(draft) || !next.reports[selectedDate]?.entries.length)) next.drafts[selectedDate] = draft;
     else delete next.drafts[selectedDate];
     return next;
   }
@@ -148,7 +152,7 @@
     const report = state.reports[selectedDate];
     const draft = state.drafts[selectedDate];
     $('userName').value = report?.name ?? state.preferredName;
-    $('timeStart').value = draft?.start || '';
+    $('timeStart').value = draft ? draft.start : (!report?.entries.length ? '08:00' : '');
     $('timeEnd').value = draft?.end || '';
     $('nextDay').checked = !!draft?.nextDay;
     $('workContent').value = draft?.content || '';
