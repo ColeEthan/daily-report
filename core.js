@@ -47,6 +47,9 @@
     if (!entry.start) return '';
     return shortTime(entry.start) + (entry.end ? `-${entry.nextDay ? '次日' : ''}${shortTime(entry.end)}` : '');
   }
+  function isEmptyDraft(draft) {
+    return !draft.entryId && !draft.start && !draft.end && !draft.nextDay && !draft.content.trim() && !draft.legacyTime;
+  }
   function validateState(input, { preserveInvalidTimes = false } = {}) {
     assert(isObject(input) && input.version === 2, '不支持的日报数据版本');
     assert(isObject(input.reports) && isObject(input.drafts), '日报数据结构不正确');
@@ -87,6 +90,10 @@
         content: text(draft.content), legacyTime: text(draft.legacyTime || '', 100)
       };
       assert(typeof clean.nextDay === 'boolean' && (!clean.start || timeValue(clean.start)) && (!clean.end || timeValue(clean.end)), '草稿时间格式不正确');
+      assert(draft.continuation === undefined || typeof draft.continuation === 'boolean', '草稿格式不正确');
+      // Keep the automatic-continuation marker only when it is actually set, so
+      // old backups without the field still round-trip byte-for-byte.
+      if (draft.continuation === true) clean.continuation = true;
       if (clean.entryId && !result.reports[date]?.entries.some(entry => entry.id === clean.entryId)) clean.entryId = null;
       result.drafts[date] = clean;
     }
@@ -232,10 +239,14 @@
     }
     for (const [date, draft] of Object.entries(incoming.drafts)) {
       const existing = state.drafts[date];
-      if (existing) {
-        if (JSON.stringify(existing) !== JSON.stringify(draft)) stats.draftConflicts++;
-      } else {
-        // Imported edits become independent drafts so saving cannot overwrite a local entry.
+      const localEmpty = existing ? isEmptyDraft(existing) : false;
+      const incomingEmpty = isEmptyDraft(draft);
+      if (existing && !localEmpty) {
+        // A real local draft wins. An empty incoming draft is not a conflict.
+        if (!incomingEmpty && JSON.stringify(existing) !== JSON.stringify(draft)) stats.draftConflicts++;
+      } else if (!incomingEmpty) {
+        // An empty local draft only means "the default start was cleared";
+        // it must not block restoring a real draft from the backup.
         state.drafts[date] = { ...draft, entryId: null };
         stats.drafts++;
       }
@@ -243,5 +254,5 @@
     if (!state.preferredName) state.preferredName = incoming.preferredName;
     return { state: validateState(state), stats };
   }
-  return { STORAGE_KEY, LEGACY_KEY, NAME_KEY, clone, validDate, today, displayDate, id, emptyState, validateRange, entryTime, validateState, migrateLegacy, load, createWriter, save, makeEntry, buildReport, exportBackup, parseBackup, mergeBackup };
+  return { STORAGE_KEY, LEGACY_KEY, NAME_KEY, clone, validDate, today, displayDate, id, emptyState, validateRange, entryTime, isEmptyDraft, validateState, migrateLegacy, load, createWriter, save, makeEntry, buildReport, exportBackup, parseBackup, mergeBackup };
 });

@@ -5,18 +5,28 @@
   let state = C.emptyState();
   let raw = null;
   let selectedDate = C.today();
+  let lastToday = C.today();
   let editingId = null;
   let legacyTime = '';
   let recoveryMode = false;
   let unsaved = false;
   let pendingImport = null;
   let composing = false;
+  // The name is shown per date but is only a global preference while the user
+  // is actually editing it; merely browsing a date must not change it.
+  let nameDirty = false;
+  // Automatic post-entry continuation drafts may be replaced silently by
+  // "edit"; a time draft the user typed must be confirmed first.
+  let continuationDraft = false;
+  // A midnight reminder is cleared as soon as the user moves to another date.
+  let rolloverText = '';
   const writer = C.createWriter(navigator.locks);
   let needsTimeReview = false;
   const durationMinutes = [15, 30, 60, 120];
 
   function saveTimeChange(message) {
     legacyTime = '';
+    continuationDraft = false;
     $('legacyHint').hidden = true;
     $('timeFeedback').textContent = message;
     unsaved = true;
@@ -102,8 +112,10 @@
     }
   }
   function captureDraft() {
-    return { entryId: editingId, start: $('timeStart').value, end: $('timeEnd').value,
+    const draft = { entryId: editingId, start: $('timeStart').value, end: $('timeEnd').value,
       nextDay: $('nextDay').checked, content: $('workContent').value, legacyTime };
+    if (continuationDraft) draft.continuation = true;
+    return draft;
   }
   function hasDraft(draft) { return !!(draft.entryId || draft.start || draft.end || draft.nextDay || draft.content || draft.legacyTime); }
   function withForm(base = state) {
@@ -113,8 +125,10 @@
     // A displayed default alone is not a draft or a reason to create a report.
     const defaultOnly = !base.drafts[selectedDate] && !base.reports[selectedDate]?.entries.length &&
       draft.start === '08:00' && !draft.end && !draft.nextDay && !draft.content && !draft.entryId && !draft.legacyTime;
-    next.preferredName = name;
-    if (next.reports[selectedDate] || name || (!defaultOnly && hasDraft(draft))) {
+    if (nameDirty) next.preferredName = name;
+    // A prefilled name (or an empty one from a historical date) is not itself
+    // a reason to create a report. Only an existing report or real draft does.
+    if (next.reports[selectedDate] || (!defaultOnly && hasDraft(draft))) {
       next.reports[selectedDate] ||= { name, entries: [] };
       next.reports[selectedDate].name = name;
     }
@@ -158,11 +172,15 @@
     $('workContent').value = draft?.content || '';
     editingId = draft?.entryId || null;
     legacyTime = draft?.legacyTime || '';
+    continuationDraft = draft?.continuation === true;
+    nameDirty = false;
     $('legacyHint').textContent = legacyTime ? `保留旧记录时间：${legacyTime}。重新填写时间可替换。` : '';
     $('legacyHint').hidden = !legacyTime;
     $('saveEntryButton').textContent = editingId ? '保存修改' : '＋ 添加记录';
     $('cancelEditButton').hidden = !editingId;
-    $('saveStatus').textContent = draft ? (editingId ? '已恢复编辑草稿' : '已恢复上次草稿') : '记录保存在当前浏览器';
+    $('saveStatus').textContent = draft
+      ? (C.isEmptyDraft(draft) ? '开始时间已清空' : editingId ? '已恢复编辑草稿' : '已恢复上次草稿')
+      : '记录保存在当前浏览器';
     $('timeFeedback').textContent = selectedDate === C.today() ? '选好时长后，可点“＋30分钟”继续累加。' : '补录也可用“＋30分钟”累加；“现在”仅用于今天。';
     resizeText();
     updateDate();
@@ -222,6 +240,8 @@
     if (!C.validDate(date)) { $('reportDate').value = selectedDate; return; }
     if (recoveryMode || (writer.active && !saveForm()) || (!writer.active && unsaved)) { $('reportDate').value = selectedDate; return; }
     selectedDate = date;
+    if (rolloverText && $('notice').textContent === rolloverText) notice('');
+    rolloverText = '';
     loadForm();
     renderEntries();
   }
@@ -240,7 +260,7 @@
       } else entries.push(entry);
       delete next.drafts[selectedDate];
       const continueAt = !editingId && !entry.nextDay && !entry.legacyTime && entry.end;
-      if (continueAt) next.drafts[selectedDate] = { entryId: null, start: continueAt, end: '', nextDay: false, content: '', legacyTime: '' };
+      if (continueAt) next.drafts[selectedDate] = { entryId: null, start: continueAt, end: '', nextDay: false, content: '', legacyTime: '', continuation: true };
       if (!commit(next)) return;
       loadForm();
       renderEntries();
@@ -252,7 +272,9 @@
     if (recoveryMode || !writer.active) return;
     if (editingId === id) { $('workContent').focus(); return; }
     if (!saveForm()) return;
-    if ((editingId || $('workContent').value.trim()) && !confirm('当前有未提交草稿。放弃这份草稿并编辑所选记录？')) return;
+    const draft = captureDraft();
+    const hasUserDraft = hasDraft(draft) && draft.continuation !== true;
+    if ((editingId || draft.content.trim() || hasUserDraft) && !confirm('当前有未提交草稿。放弃这份草稿并编辑所选记录？')) return;
     const entry = state.reports[selectedDate]?.entries.find(item => item.id === id);
     if (!entry) return;
     const next = C.clone(state);
@@ -298,7 +320,9 @@
     if (recoveryMode || (writer.active && !saveForm())) return;
     const report = state.reports[date];
     if (!report?.entries.length) return;
-    if (date === selectedDate && (editingId || $('workContent').value.trim()) && !confirm('当前草稿尚未添加到记录。先生成已保存记录的汇报？')) return;
+    const draft = captureDraft();
+    const hasUserDraft = hasDraft(draft) && draft.continuation !== true;
+    if (date === selectedDate && (editingId || draft.content.trim() || hasUserDraft) && !confirm('当前草稿尚未添加到记录。先生成已保存记录的汇报？')) return;
     $('previewText').textContent = C.buildReport(date, report);
     $('copyHint').hidden = true;
     $('manualCopy').hidden = true;
@@ -347,7 +371,8 @@
       const label = document.createElement('span');
       const count = state.reports[date]?.entries.length || 0;
       const draft = state.drafts[date];
-      label.textContent = `${date}（${count} 条${draft && (draft.entryId || draft.content.trim()) ? '，有草稿' : ''}）`;
+      const emptyDraft = draft && C.isEmptyDraft(draft);
+      label.textContent = `${date}（${count} 条${emptyDraft ? '，已清空开始时间' : draft ? '，有草稿' : ''}）`;
       const actions = document.createElement('div');
       actions.className = 'actions';
       const view = button('查看', 'btn-view', () => showReport(date));
@@ -519,6 +544,8 @@
   $('durationAdd30').addEventListener('click', () => fillDuration(30, true));
   ['userName', 'timeStart', 'timeEnd', 'nextDay', 'workContent'].forEach(id => {
     $(id).addEventListener('input', () => {
+      if (id === 'userName') nameDirty = true;
+      if (id === 'timeStart' || id === 'timeEnd' || id === 'nextDay' || id === 'workContent') continuationDraft = false;
       if (id === 'timeStart' || id === 'timeEnd' || id === 'nextDay') {
         legacyTime = '';
         $('legacyHint').hidden = true;
@@ -568,7 +595,23 @@
   });
   window.addEventListener('pageshow', event => { if (event.persisted) acquireWriter(); });
   function checkDate() {
-    // Keep every action bound to the displayed date; midnight must never retarget a deletion.
+    const today = C.today();
+    if (today !== lastToday) {
+      const previous = lastToday;
+      lastToday = today;
+      // Keep every action bound to the displayed date, but do not let a form
+      // with nothing in it keep yesterday selected after midnight.
+      if (selectedDate === previous) {
+        const hasDraft = !!state.drafts[selectedDate];
+        const hasEntries = !!state.reports[selectedDate]?.entries.length;
+        if (!hasDraft && !hasEntries && !unsaved) {
+          switchDate(today);
+        } else {
+          rolloverText = `日期已变为${C.displayDate(today)}，当前仍在记录${C.displayDate(selectedDate)}。请确认后点“回到今天”。`;
+          notice(rolloverText);
+        }
+      }
+    }
     updateDate();
   }
   window.addEventListener('focus', checkDate);
