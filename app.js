@@ -86,6 +86,11 @@
     $('nextDay').checked = false;
     saveTimeChange('时间已清空，可以只记录工作内容。');
   }
+  function fillAfternoonStart() {
+    if (recoveryMode || !writer.active) return;
+    $('timeStart').value = '13:30';
+    saveTimeChange('已将开始时间填为 13:30（下午1:30）。');
+  }
 
   function notice(message) {
     $('notice').textContent = message;
@@ -491,7 +496,7 @@
     } catch (error) { backupError(`恢复失败：${errorMessage(error)}`); }
   }
   function setRecoveryControls() {
-    ['userName', 'timeStart', 'timeEnd', 'nextDay', 'workContent', 'saveEntryButton', 'cancelEditButton', 'clearTimeButton', 'durationAdd30', ...durationMinutes.map(minutes => `duration${minutes}`)].forEach(id => { $(id).disabled = recoveryMode || !writer.active; });
+    ['userName', 'timeStart', 'timeEnd', 'nextDay', 'workContent', 'saveEntryButton', 'cancelEditButton', 'clearTimeButton', 'afternoonStartButton', 'durationAdd30', ...durationMinutes.map(minutes => `duration${minutes}`)].forEach(id => { $(id).disabled = recoveryMode || !writer.active; });
     ['reportDate', 'historyButton', 'todayButton'].forEach(id => { $(id).disabled = recoveryMode; });
     ['importFile', 'confirmImportButton'].forEach(id => { $(id).disabled = !writer.active; });
   }
@@ -539,6 +544,7 @@
   $('todayButton').addEventListener('click', () => switchDate(C.today()));
   $('startNowButton').addEventListener('click', () => fillNow('timeStart'));
   $('endNowButton').addEventListener('click', () => fillNow('timeEnd'));
+  $('afternoonStartButton').addEventListener('click', fillAfternoonStart);
   $('clearTimeButton').addEventListener('click', clearTime);
   durationMinutes.forEach(minutes => $(`duration${minutes}`).addEventListener('click', () => fillDuration(minutes)));
   $('durationAdd30').addEventListener('click', () => fillDuration(30, true));

@@ -10,7 +10,7 @@
 <title>工作日报</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%93%8B%3C/text%3E%3C/svg%3E">
 <script src="core.js?v=20261022-fixes" defer></script>
-<script src="app.js?v=20261022-fixes" defer></script>
+<script src="app.js?v=20261027-afternoon-start" defer></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -296,6 +296,7 @@
   .time-label { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
   .time-label label { margin-bottom: 0; }
   .time-now { min-width: 44px; padding: 6px; border: 0; background: transparent; color: #0066d6; font-size: 14px; }
+  .time-preset { margin-top: 6px; padding: 6px 10px; border: 1px solid #c2d8f5; border-radius: 8px; background: #eef4ff; }
   .duration-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; }
   .duration-buttons { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
   .duration-buttons button { min-width: 0; padding: 8px 4px; border: 1px solid #c2d8f5; border-radius: 8px; background: #eef4ff; color: #005bbb; font-size: 14px; }
@@ -360,7 +361,7 @@
       <label for="userName">姓名</label>
       <input type="text" id="userName" maxlength="100" autocomplete="name" placeholder="输入姓名（可不填）">
       <div class="time-row">
-        <div><div class="time-label"><label for="timeStart">开始时间</label><button type="button" id="startNowButton" class="time-now" aria-label="开始时间填为现在">现在</button></div><input type="time" id="timeStart"></div>
+        <div><div class="time-label"><label for="timeStart">开始时间</label><button type="button" id="startNowButton" class="time-now" aria-label="开始时间填为现在">现在</button></div><input type="time" id="timeStart"><button type="button" id="afternoonStartButton" class="time-now time-preset" aria-label="开始时间填为下午1点30分">下午1:30</button></div>
         <div><div class="time-label"><label for="timeEnd">结束时间</label><button type="button" id="endNowButton" class="time-now" aria-label="结束时间填为现在">现在</button></div><input type="time" id="timeEnd"></div>
       </div>
       <div class="duration-heading"><span class="hint">工作时长（时间均可不填）</span><button type="button" id="clearTimeButton" class="time-now">清空时间</button></div>

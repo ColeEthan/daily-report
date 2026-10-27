@@ -1,6 +1,34 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { setup, enter, add, action, C } = require('./helpers.cjs');
+test('afternoon preset fills 13:30 on any date and survives reload before duration selection', async () => {
+  const app = setup();
+  app.elements.reportDate.value = '2026-09-04';
+  await app.elements.reportDate.fire('change');
+  app.elements.timeEnd.value = '14:00';
+  await enter(app, '下午巡检');
+  await app.elements.afternoonStartButton.fire('click');
+  assert.equal(app.elements.timeStart.value, '13:30');
+  assert.equal(app.elements.timeEnd.value, '14:00');
+  assert.equal(app.elements.workContent.value, '下午巡检');
+  assert.equal(app.saved().drafts['2026-09-04'].start, '13:30');
+  const restored = setup(Object.fromEntries(app.values));
+  restored.elements.reportDate.value = '2026-09-04';
+  await restored.elements.reportDate.fire('change');
+  assert.equal(restored.elements.timeStart.value, '13:30');
+  await restored.elements.duration60.fire('click');
+  assert.equal(restored.elements.timeEnd.value, '14:30');
+  await restored.elements.entryForm.fire('submit');
+  assert.equal(restored.saved().reports['2026-09-04'].entries[0].start, '13:30');
+});
+test('afternoon preset cannot change the form in read-only or recovery mode', async () => {
+  for (const app of [setup({}, { locks: undefined }), setup({ [C.STORAGE_KEY]: '{corrupt' })]) {
+    const before = app.elements.timeStart.value;
+    assert.equal(app.elements.afternoonStartButton.disabled, true);
+    await app.elements.afternoonStartButton.fire('click');
+    assert.equal(app.elements.timeStart.value, before);
+  }
+});
 test('duration shortcuts calculate from start without accumulating and persist the draft', async () => {
   const app = setup();
   await app.elements.clearTimeButton.fire('click');
