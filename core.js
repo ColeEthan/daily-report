@@ -181,11 +181,11 @@
   }
   function buildReport(date, report) {
     const title = report.name.trim() ? `${report.name.trim()}工作汇报` : '工作汇报';
-    const lines = report.entries.map((entry, index) => {
+    const lines = report.entries.map(entry => {
       const time = entryTime(entry);
       let content = entry.content.trim().replace(/[。.，,；;]+$/g, '');
       if (!/[！？!?]$/.test(content)) content += '。';
-      return `${index + 1}，${time ? `${time}，` : ''}${content}`;
+      return `${time ? `${time}，` : ''}${content}`;
     });
     return `${displayDate(date)}\n${title}\n${lines.join('\n')}\n`;
   }
