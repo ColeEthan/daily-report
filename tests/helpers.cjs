@@ -11,6 +11,7 @@ function setup(initial = {}, options = {}) {
     append(...children) { this.children.push(...children); }
     replaceChildren(...children) { this.children = children; }
     setAttribute() {}
+    querySelector() { return this.children[0].children[1]; }
     focus() {}
     select() {}
     setSelectionRange() {}
@@ -37,6 +38,13 @@ function setup(initial = {}, options = {}) {
   const core = { ...C, today: () => C.today(now) };
   const context = { DailyReport: core, document, window, localStorage: storage, navigator: { ...options.navigator, locks: Object.hasOwn(options, 'locks') ? options.locks : fakeLocks() }, Date: Clock, Blob, URL: { createObjectURL: () => 'blob:backup', revokeObjectURL() {} }, confirm: () => options.confirm !== false, setTimeout() {}, setInterval() {} };
   vm.runInNewContext(source, context);
+  if (options.bulk) {
+    for (const id of ['preview', 'warnings', 'confirmWrap', 'retry']) elements[id].hidden = true;
+    const session = new Map();
+    context.DailyReportBulk = require('../bulk-core.js');
+    context.sessionStorage = { getItem: key => session.get(key) ?? null, setItem: (key, value) => session.set(key, value), removeItem: key => session.delete(key) };
+    vm.runInNewContext(fs.readFileSync(require.resolve('../bulk.js'), 'utf8'), context);
+  }
   return { elements, values, document, window, storage, options, tick: value => { now = new Date(value); }, saved: () => JSON.parse(values.get(C.STORAGE_KEY)) };
 }
 async function enter(app, text = '摄像头调试') {

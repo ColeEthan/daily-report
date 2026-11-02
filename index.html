@@ -10,7 +10,10 @@
 <title>工作日报</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%93%8B%3C/text%3E%3C/svg%3E">
 <script src="core.js?v=20261030-report-no-numbering" defer></script>
-<script src="app.js?v=20261027-afternoon-start" defer></script>
+<script src="bulk-core.js?v=20261102" defer></script>
+<script src="app.js?v=20261102-bulk-integrated" defer></script>
+<script src="bulk.js?v=20261102-integrated" defer></script>
+<link rel="stylesheet" href="bulk-embedded.css?v=20261102">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -352,6 +355,8 @@
 <main>
   <div id="notice" class="notice" role="alert" hidden></div>
   <section class="input-area" aria-label="填写日报">
+    <button type="button" class="bulk-open" id="bulkButton">📥 批量录入整份日报</button>
+    <p class="hint">已有完整日报？点这里粘贴，一次保存全部记录。</p>
     <div class="date-row">
       <div><label for="reportDate">记录日期</label><input type="date" id="reportDate" required></div>
       <button type="button" id="todayButton" class="text-button">回到今天</button>
@@ -418,6 +423,12 @@
     <button type="button" class="btn-hclose" data-close="backupDialog">关闭</button>
   </div>
 </dialog>
+<dialog id="bulkDialog" aria-labelledby="bulkTitle"><div class="dialog-content">
+<div class="bulk-bar"><h3 id="bulkTitle">批量录入整份日报</h3><button type="button" data-close="bulkDialog">返回日报</button></div>
+<div id="lockStatus" class="notice" role="status"></div><button id="retry" class="secondary" hidden>重新连接保存</button>
+<section><h2>1. 粘贴日报</h2><label for="source">完整文字</label><textarea id="source" rows="10" maxlength="100000" placeholder="工作日报&#10;日期：2026-11-02&#10;姓名：高翔&#10;&#10;08:00—12:00&#10;检修福源门禁及刷卡设备。&#10;&#10;13:30—17:30&#10;前往锦园查看电梯。"></textarea><p class="hint">支持时间与内容同行、分行、只有开始时间，以及无时间的休班事项。多行内容会保留在同一时间段内。</p><button id="parse">识别并预览</button><p id="message" role="status" aria-live="polite"></p></section>
+<section id="preview" hidden><h2>2. 检查记录</h2><div class="fields"><label>日期<input id="date" type="date"></label><label>姓名<input id="name" maxlength="100" placeholder="可不填"></label></div><p id="summary"></p><div id="rows"></div><div id="warnings" class="notice" hidden></div><label id="confirmWrap" class="check" hidden><input id="confirm" type="checkbox">我已查看上述提示，仍要追加这些记录</label><button id="save">保存到当天</button><p id="saveResult" role="status" aria-live="polite"></p><p class="hint">记录将追加到所选日期，完全重复的内容会跳过。原有日报和填写草稿会保留。</p></section>
+<button type="button" class="bulk-finish" data-close="bulkDialog">完成，返回日报</button></div></dialog>
 <script nomodule>document.body.insertAdjacentHTML('afterbegin', '<p>请使用支持现代 JavaScript 的浏览器打开工作日报。</p>');</script>
 </body>
 </html>

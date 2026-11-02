@@ -11,6 +11,7 @@
   let recoveryMode = false;
   let unsaved = false;
   let pendingImport = null;
+  let refreshBulk = () => {};
   let composing = false;
   // The name is shown per date but is only a global preference while the user
   // is actually editing it; merely browsing a date must not change it.
@@ -496,6 +497,7 @@
     } catch (error) { backupError(`恢复失败：${errorMessage(error)}`); }
   }
   function setRecoveryControls() {
+    refreshBulk();
     ['userName', 'timeStart', 'timeEnd', 'nextDay', 'workContent', 'saveEntryButton', 'cancelEditButton', 'clearTimeButton', 'afternoonStartButton', 'durationAdd30', ...durationMinutes.map(minutes => `duration${minutes}`)].forEach(id => { $(id).disabled = recoveryMode || !writer.active; });
     ['reportDate', 'historyButton', 'todayButton'].forEach(id => { $(id).disabled = recoveryMode; });
     ['importFile', 'confirmImportButton'].forEach(id => { $(id).disabled = !writer.active; });
@@ -626,5 +628,28 @@
     if (document.visibilityState === 'visible') checkDate();
   });
   setInterval(checkDate, 30000);
+  // The embedded bulk editor shares this page's writer and state, so it never
+  // competes for a second lock or leaves the main form holding a stale snapshot.
+  window.DailyReportBulkHost = {
+    writer,
+    read: () => ({ state: C.clone(state), raw, healthy: !recoveryMode }),
+    subscribe: callback => { refreshBulk = callback; },
+    save(next, expectedRaw, date) {
+      if (recoveryMode || expectedRaw !== raw) throw new Error('日报数据已变化，请重新识别预览');
+      const saved = C.save(localStorage, next, expectedRaw, writer);
+      raw = saved;
+      state = next;
+      unsaved = false;
+      selectedDate = date;
+      loadForm();
+      renderEntries();
+      return saved;
+    }
+  };
+  $('bulkButton').addEventListener('click', () => {
+    if (writer.active && !recoveryMode && !saveForm()) return;
+    refreshBulk();
+    openDialog('bulkDialog');
+  });
   acquireWriter();
 })();

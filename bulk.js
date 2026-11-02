@@ -1,7 +1,8 @@
 (function () {
   'use strict';
   const C = DailyReport, B = DailyReportBulk, $ = id => document.getElementById(id);
-  const writer = C.createWriter(navigator.locks), draftKey = 'daily_report_bulk_draft_v1';
+  const host = window.DailyReportBulkHost;
+  const writer = host ? host.writer : C.createWriter(navigator.locks), draftKey = 'daily_report_bulk_draft_v1';
   let state = C.emptyState(), raw = null, healthy = false, entries = [], previewRaw = null, plan = null;
   let dirty = false;
   function message(text) { $('message').textContent = text; }
@@ -13,7 +14,9 @@
   }
   function load() {
     healthy = false;
-    try { const loaded = C.load(localStorage); state = loaded.state; raw = loaded.raw; healthy = true; }
+    try { const loaded = host ? host.read() : C.load(localStorage); state = loaded.state; raw = loaded.raw; healthy = loaded.healthy !== false;
+      if (!healthy) throw new Error('数据无法读取');
+    }
     catch { $('lockStatus').textContent = '原有日报数据无法读取，已停止保存。请返回原日报，使用“备份与恢复”处理。粘贴内容可继续整理。'; }
   }
   function update() {
@@ -85,6 +88,7 @@
   } catch { message('上次的预览无法恢复，请重新粘贴识别。'); }
   function acquire() {
     $('retry').hidden = true;
+    if (host) { refreshHost(); return; }
     writer.acquire((status, error) => {
       load();
       if (status === 'ready' && healthy) {
@@ -97,6 +101,19 @@
       update();
     });
   }
+  function refreshHost() {
+    const previousRaw = raw;
+    load();
+    if (previewRaw === null && $('preview').hidden) previewRaw = raw;
+    if (previousRaw !== raw) previewRaw = undefined;
+    if (healthy) $('lockStatus').textContent = writer.active
+      ? '整份粘贴后一次识别、一次保存，无需逐项填写。'
+      : '当前页面为只读。请关闭其他日报页面，再刷新本页；当前输入会暂存。';
+    if (healthy && writer.active && !$('preview').hidden && previewRaw !== raw) $('lockStatus').textContent = '日报记录已有变化，请点击“识别并预览”重新检查后保存。';
+    $('retry').hidden = true;
+    update();
+  }
+  if (host) host.subscribe(refreshHost);
   $('retry').addEventListener('click', acquire);
   $('source').addEventListener('input', () => {
     entries = []; plan = null; $('preview').hidden = true;
@@ -127,7 +144,7 @@
       if (previewRaw !== raw || localStorage.getItem(C.STORAGE_KEY) !== previewRaw) throw new Error('日报数据已有变化，请点击“识别并预览”重新检查后保存。当前输入仍保留。');
       const checked = B.prepare(state, $('date').value, $('name').value, entries);
       if (!checked.added || (checked.warnings.length && !$('confirm').checked)) return;
-      raw = C.save(localStorage, checked.state, previewRaw, writer);
+      raw = host ? host.save(checked.state, previewRaw, $('date').value) : C.save(localStorage, checked.state, previewRaw, writer);
       state = checked.state; previewRaw = raw;
       dirty = false;
       try { sessionStorage.removeItem(draftKey); } catch { /* Data is already committed. */ }
@@ -146,7 +163,7 @@
     previewRaw = undefined; update();
   });
   window.addEventListener('beforeunload', event => { if (dirty) { event.preventDefault(); event.returnValue = ''; } });
-  window.addEventListener('pagehide', () => { writer.release(); enableSave(); });
-  window.addEventListener('pageshow', event => { if (event.persisted) acquire(); });
+  window.addEventListener('pagehide', () => { if (!host) writer.release(); enableSave(); });
+  window.addEventListener('pageshow', event => { if (event.persisted && !host) acquire(); });
   acquire();
 })();
