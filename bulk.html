@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>批量录入 · 工作日报</title><link rel="stylesheet" href="bulk.css"><script defer src="core.js"></script><script defer src="bulk-core.js"></script><script defer src="bulk.js"></script></head>
+<body><main>
+<header><div><span class="eyebrow">工作日报</span><h1>批量录入</h1><p>粘贴整份日报，检查后一次保存。</p></div><a href="./index.html">返回原日报 ↗</a></header>
+<div id="lockStatus" class="notice" role="status"></div><button id="retry" class="secondary" hidden>重新连接保存</button>
+<section><h2>1. 粘贴日报</h2><label for="source">完整文字</label><textarea id="source" rows="10" maxlength="100000" placeholder="工作日报&#10;日期：2026-11-02&#10;姓名：高翔&#10;&#10;08:00—12:00&#10;检修福源门禁及刷卡设备。&#10;&#10;13:30—17:30&#10;前往锦园查看电梯。"></textarea><p class="hint">支持时间与内容同行、分行、只有开始时间，以及无时间的休班事项。多行内容会保留在同一时间段内。</p><button id="parse">识别并预览</button><p id="message" role="status" aria-live="polite"></p></section>
+<section id="preview" hidden><h2>2. 检查记录</h2><div class="fields"><label>日期<input id="date" type="date"></label><label>姓名<input id="name" maxlength="100" placeholder="可不填"></label></div><p id="summary"></p><div id="rows"></div><div id="warnings" class="notice" hidden></div><label id="confirmWrap" class="check" hidden><input id="confirm" type="checkbox">我已查看上述提示，仍要追加这些记录</label><button id="save">保存到当天</button><p id="saveResult" role="status" aria-live="polite"></p><p class="hint">记录将追加到所选日期，完全重复的内容会跳过。原有日报和填写草稿会保留。</p></section>
+<footer>请使用原日报网址所在的同一浏览器，保存后可返回原日报查看和生成汇报。</footer>
+</main></body></html>
