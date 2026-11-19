@@ -128,6 +128,20 @@ test('provider failure keeps the current preview and the description', async () 
   assert.equal(el.rows.children, original);
 });
 
+test('local file directs users to the online site without sending AI requests', async () => {
+  const { elements: el } = setup({}, {
+    bulk: true, location: 'file:///reports/index.html',
+    aiFetch: async () => assert.fail('local file requested the AI API')
+  });
+  await el.bulkButton.fire('click');
+  assert.equal(el.aiForm.hidden, true);
+  assert.equal(el.aiLocalNotice.hidden, false);
+  await el.aiGenerate.fire('click');
+  el.source.value = '08:00—12:00\n手动粘贴测试';
+  await el.parse.fire('click');
+  assert.equal(el.preview.hidden, false);
+});
+
 test('a pending AI response cannot replace a newer pasted preview', async () => {
   let complete;
   const response = new Promise(resolve => { complete = resolve; });

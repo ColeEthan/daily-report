@@ -48,7 +48,7 @@ function setup(initial = {}, options = {}) {
       elements.aiSection.dataset = { endpoint: 'https://worker.example/generate' };
       Object.assign(context, {
         URL, AbortController, clearTimeout, fetch: options.aiFetch,
-        location: new URL('https://coleethan.github.io/daily-report/')
+        location: new URL(options.location || 'https://coleethan.github.io/daily-report/')
       });
     }
     vm.runInNewContext(fs.readFileSync(require.resolve('../bulk.js'), 'utf8'), context);

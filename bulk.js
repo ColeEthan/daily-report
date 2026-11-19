@@ -163,6 +163,12 @@
   function setupAi(endpoint) {
     aiSection.hidden = false;
     $('bulkButton').textContent = 'AI 生成日报 / 批量录入';
+    if (location.protocol === 'file:') {
+      $('bulkEntryHint').textContent = '此文件可粘贴日报，AI 生成请打开正式网页。';
+      $('aiForm').hidden = true;
+      $('aiLocalNotice').hidden = false;
+      return;
+    }
     $('bulkEntryHint').textContent = '说一句今天做了什么，让 AI 整理，或粘贴整份日报。';
     const noteInput = $('aiNote');
     const accessInput = $('aiToken');
