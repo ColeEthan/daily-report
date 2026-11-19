@@ -71,7 +71,39 @@ test('Worker handles provider failures and incomplete model output without retur
   fetch.mock.mockImplementation(async () => Response.redirect('https://example.com'));
   assert.equal((await requestWorker()).status, 502);
   fetch.mock.mockImplementation(async () => Response.json({ choices: [{ finish_reason: 'length' }] }));
-  assert.equal((await requestWorker()).status, 502);
+  const incomplete = await requestWorker();
+  assert.equal(incomplete.status, 502);
+  assert.equal((await incomplete.json()).code, 'provider_output_invalid');
+  fetch.mock.mockImplementation(async () => { throw new DOMException('aborted', 'TimeoutError'); });
+  assert.equal((await requestWorker()).status, 504);
+});
+
+test('sparse model output remains usable and standalone leave is recovered from the description', async t => {
+  let period = 'afternoon_off';
+  t.mock.method(globalThis, 'fetch', async () => Response.json({
+    choices: [{
+      finish_reason: 'stop',
+      message: { content: JSON.stringify({ items: [{ content: '查看商云系统日志。', period }] }) }
+    }]
+  }));
+  for (period of ['afternoon_off', 'afternoon']) {
+    const response = await requestWorker({ note: '查看系统日志。下午休班。' });
+    assert.equal(response.status, 200);
+    const result = await response.json();
+    assert.deepEqual(result.entries.map(({ content, start, end }) => [content, start, end]), [
+      ['查看商云系统日志。', '08:00', '12:00'], ['下午休班。', '', '']
+    ]);
+  }
+});
+
+test('normalizes valid clock variants and lets the user review a malformed time without dropping the work', async () => {
+  const { scheduleReport } = await import('../ai-worker/schedule.mjs');
+  const result = scheduleReport([
+    { content: '维修测试门禁。', start: '9：00', end: '11:17' },
+    { content: '检查电梯。', start: '时间未知', end: '15:00' }
+  ]);
+  assert.equal(result.needsTimeReview, true);
+  assert.deepEqual(result.entries.map(({ start, end }) => [start, end]), [['09:00', '11:17'], ['', '']]);
 });
 
 test('schedule preserves explicit and overnight times and reserves the stated half-day off', async () => {

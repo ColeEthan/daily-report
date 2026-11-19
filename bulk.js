@@ -12,7 +12,8 @@
     dirty = true;
     try { sessionStorage.setItem(draftKey, JSON.stringify({
       source: $('source').value, date: $('date').value, name: $('name').value, entries,
-      preview: !$('preview').hidden, estimated: $('aiEstimate')?.hidden === false
+      preview: !$('preview').hidden, estimated: $('aiEstimate')?.hidden === false,
+      needsTimeReview: $('aiTimeReview')?.hidden === false
     })); }
     catch { message('浏览器无法暂存输入，请在离开前复制保留文字。'); }
   }
@@ -89,6 +90,8 @@
         if (healthy) previewRaw = raw;
         const estimate = $('aiEstimate');
         if (estimate) estimate.hidden = cached.estimated !== true;
+        const timeReview = $('aiTimeReview');
+        if (timeReview) timeReview.hidden = cached.needsTimeReview !== true;
         $('preview').hidden = false; renderRows();
       }
       dirty = !!cached.source || !!entries.length;
@@ -137,6 +140,8 @@
     $('preview').hidden = false;
     const estimate = $('aiEstimate');
     if (estimate) estimate.hidden = !parsed.estimated;
+    const timeReview = $('aiTimeReview');
+    if (timeReview) timeReview.hidden = !parsed.needsTimeReview;
     renderRows(); update(); stash();
   }
   $('parse').addEventListener('click', () => {
@@ -219,10 +224,16 @@
             failure = '未识别到工作事项，请补充当天做了什么。';
           } else if (response.status === 503) {
             failure = 'AI 接口尚未完成配置。';
+          } else if (response.status === 504) {
+            failure = '模型响应超时，简述已保留，请稍后重试。';
           } else if (response.status === 502) {
             const detail = await response.json().catch(() => null);
             if (detail?.code === 'provider_key_invalid') {
               failure = '硅基流动 API Key 无效，请在 Cloudflare 更新 SILICONFLOW_API_KEY。';
+            } else if (detail?.code === 'provider_output_invalid') {
+              failure = '模型返回的日报格式不完整，简述已保留，请重试。';
+            } else if (detail?.code === 'provider_unavailable') {
+              failure = '模型服务暂时无法响应，简述已保留，请稍后重试。';
             } else {
               failure = '模型生成失败，简述已保留，请重试。';
             }
@@ -231,7 +242,7 @@
         }
         failure = 'AI 返回的格式无法使用，简述已保留，请重试。';
         const result = await response.json();
-        if (!Array.isArray(result.entries) || !result.entries.length || result.entries.length > 12) {
+        if (!Array.isArray(result.entries) || !result.entries.length || result.entries.length > 15) {
           throw new Error('Invalid report');
         }
         const generated = result.entries.map(entry => C.makeEntry({
@@ -245,7 +256,8 @@
         showPreview({
           date: C.validDate(requestedDate) ? requestedDate : C.today(),
           entries: generated,
-          estimated: result.estimated === true
+          estimated: result.estimated === true,
+          needsTimeReview: result.needsTimeReview === true
         });
         $('aiAccess').open = false;
         status.textContent = `已生成 ${generated.length} 条，确认后保存。`;

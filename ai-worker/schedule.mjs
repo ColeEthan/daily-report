@@ -5,6 +5,8 @@ const windows = {
 const periods = new Set(['morning', 'afternoon', 'unknown', 'untimed', 'morning_off', 'afternoon_off', 'day_off']);
 const timePattern = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 const estimateStep = 30;
+const offPeriods = { 上午: 'morning_off', 下午: 'afternoon_off', 全天: 'day_off' };
+const restContent = /^(?:今天|当天)?\s*(上午|下午|全天)?\s*(休班|休假|请假)(?:\s*(半天|一天|全天))?[。！!]*$/;
 
 function roundUp(minutes) {
   return Math.ceil(minutes / estimateStep) * estimateStep;
@@ -45,18 +47,36 @@ function keepBoundsOpen(work, note) {
   }
 }
 
+function modelClock(value) {
+  if (value == null || value === '') return '';
+  const shape = typeof value === 'string' && /^(\d{1,2})[:：]([0-5]\d)$/.exec(value.trim());
+  const clock = shape ? shape[1].padStart(2, '0') + ':' + shape[2] : '';
+  return timePattern.test(clock) ? clock : null;
+}
+
 function normalizeItem(item) {
-  if (!item || typeof item.content !== 'string' || !item.content.trim() || item.content.length > 500 ||
-      !periods.has(item.period) || typeof item.nextDay !== 'boolean') {
+  if (!item || typeof item.content !== 'string' || !item.content.trim() || item.content.length > 500) {
     throw new Error('Invalid work item');
   }
-  let { start, end, nextDay, period } = item;
-  if (start === null) start = '';
-  if (end === null) end = '';
-  if (typeof start !== 'string' || typeof end !== 'string' ||
-      (start && !timePattern.test(start)) || (end && !timePattern.test(end)) ||
-      (end && !start) || (nextDay && !end) || (end && !nextDay && end <= start)) {
-    throw new Error('Invalid time range');
+  const content = item.content.trim();
+  const rest = restContent.exec(content);
+  let period = periods.has(item.period) ? item.period : 'unknown';
+  if (item.period === '上午') period = 'morning';
+  if (item.period === '下午') period = 'afternoon';
+  if (rest?.[1]) period = offPeriods[rest[1]];
+  else if (rest && (rest[3] === '一天' || rest[3] === '全天')) period = 'day_off';
+  else if (rest && !period.endsWith('_off')) period = 'untimed';
+  else if (period.endsWith('_off') && !rest) period = 'unknown';
+  let start = modelClock(item.start);
+  let end = modelClock(item.end);
+  let nextDay = item.nextDay === true || item.nextDay === 'true';
+  let needsTimeReview = false;
+  if (start === null || end === null || (end && !start) || (nextDay && (!start || !end)) ||
+      (start && end && !nextDay && end <= start)) {
+    needsTimeReview = true;
+    end = '';
+    nextDay = false;
+    if (!start && !period.endsWith('_off')) period = 'untimed';
   }
   if (period.endsWith('_off') || period === 'untimed') {
     start = '';
@@ -65,10 +85,40 @@ function normalizeItem(item) {
   } else if (start) {
     period = toMinutes(start) < 720 ? 'morning' : 'afternoon';
   }
-  const notBefore = typeof item.notBefore === 'string' && timePattern.test(item.notBefore) ? toMinutes(item.notBefore) : 0;
+  const lowerBound = modelClock(item.notBefore);
+  const notBefore = lowerBound ? toMinutes(lowerBound) : 0;
   if (period === 'unknown' && notBefore >= 720) period = 'afternoon';
   const weight = item.effort === 'short' ? 1 : item.effort === 'long' ? 3 : 2;
-  return { content: item.content.trim(), period, start, end, nextDay, notBefore, weight };
+  return { content, period, start, end, nextDay, notBefore, weight, needsTimeReview };
+}
+
+function restoreExplicitRest(work, note) {
+  const restPeriods = new Set();
+  const descriptions = [];
+  // Only restore standalone leave explicitly present in the source text.
+  for (const line of note.split(/[，,。；;、！？!?\n]+/u)) {
+    const rest = restContent.exec(line.trim());
+    if (!rest?.[1]) {
+      descriptions.push(line);
+      continue;
+    }
+    const period = offPeriods[rest[1]];
+    restPeriods.add(period);
+    if (work.some(item => item.period === period)) continue;
+    const record = normalizeItem({ content: rest[1] + rest[2] + (rest[3] || '') + '。', period });
+    if (period === 'morning_off') work.unshift(record);
+    else work.push(record);
+  }
+  if (restPeriods.size !== 1) return;
+  const morningOff = restPeriods.has('morning_off');
+  if (!morningOff && !restPeriods.has('afternoon_off')) return;
+  const restMarker = morningOff ? /上午|早上|早晨/ : /下午|午后|晚上|傍晚/;
+  if (descriptions.some(text => restMarker.test(text))) return;
+  const unavailable = morningOff ? 'morning' : 'afternoon';
+  const available = morningOff ? 'afternoon' : 'morning';
+  for (const item of work) {
+    if (item.period === unavailable && !item.start && !item.notBefore) item.period = available;
+  }
 }
 
 function occupiedBy(item) {
@@ -137,6 +187,7 @@ function estimateSlot([from, until], group) {
 export function scheduleReport(items, note = '') {
   if (!Array.isArray(items) || items.length > 12) throw new Error('Invalid items');
   const work = items.map(normalizeItem);
+  restoreExplicitRest(work, note);
   keepBoundsOpen(work, note);
   const off = new Set();
   for (const { period } of work) {
@@ -176,5 +227,9 @@ export function scheduleReport(items, note = '') {
       if (estimateSlot(slot, group)) estimated = true;
     }
   }
-  return { estimated, entries: work.map(({ content, start, end, nextDay }) => ({ content, start, end, nextDay })) };
+  return {
+    estimated,
+    needsTimeReview: work.some(item => item.needsTimeReview),
+    entries: work.map(({ content, start, end, nextDay }) => ({ content, start, end, nextDay }))
+  };
 }

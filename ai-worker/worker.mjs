@@ -12,6 +12,7 @@ const prompt = `你是高翔的物业弱电工作汇报整理助手。把本次�
 - 不使用“开展”“全面排查”“有效保障”“圆满完成”“显著提升”等说法。避免反复写“设备运行情况”“系统运行情况”。内容简单就简短表达。
 - “看电梯”写“查看电梯”，“看维保”写“查看电梯维保情况”，“查看对讲”写“检查对讲设备”。只检查的事情不要写成维修。仅当明确说已修好、恢复或完成才写对应结果。待配件、未修好、厂家处理、业主不在家等情况要保留。
 - 不添加没提到的巡检、日志、会议、检查步骤、采购、故障原因或其他内容。“查看商云日志”只写“查看商云系统日志。” 点位和数据不得猜测。
+- 整理资料、接电话及其他明确做过的普通工作也保留，即使前面说“没什么特别的”。休班和办公、维修是不同条目。例如“看商云日志，下午休班”是“查看商云系统日志”和“下午休班”两条。
 - 常见园区：福源、芳园、和园、锦园、泽园、随园、田园、尚喜园、盛世名邸（名邸）、东方明珠、国风雅居。物业点位语境下，福园→福源，河源或合园→和园，景园或颈园→锦园，上洗园→尚喜园；若有证据表明是其他项目或确有歧义，保留原词。例如“合园二号楼开门按钮修好了”写“维修和园2号楼开门按钮，已修好。” 明显的设备语音误识别可修正，如“会讲”→“对讲”、“到闸”→“道闸”、“磁吸所”→“磁吸锁”。
 
 时间由程序排。只提取用户明确指定的时间和上午、下午：
@@ -108,17 +109,26 @@ export default {
         return reply(502, { code: 'provider_key_invalid', error: '硅基流动未接受 API Key。' }, origin);
       }
       if (upstream.status === 429) return reply(429, { error: '免费模型当前限流，请稍后重试。' }, origin);
-      if (!upstream.ok) return reply(502, { error: '硅基流动暂未成功响应，请稍后重试。' }, origin);
-      const payload = await upstream.json();
-      const choice = payload.choices?.[0];
-      if (choice?.finish_reason !== 'stop' || typeof choice.message?.content !== 'string') {
-        throw new Error('Incomplete model response');
+      if (!upstream.ok) return reply(502, { code: 'provider_unavailable', error: '硅基流动暂未成功响应，请稍后重试。' }, origin);
+      let result;
+      try {
+        const payload = await upstream.json();
+        const choice = payload.choices?.[0];
+        if (choice?.finish_reason !== 'stop' || typeof choice.message?.content !== 'string') {
+          throw new Error('Incomplete model response');
+        }
+        result = scheduleReport(JSON.parse(choice.message.content).items, note);
+      } catch (error) {
+        if (error.name === 'TimeoutError' || error.name === 'AbortError') throw error;
+        return reply(502, { code: 'provider_output_invalid', error: '模型返回的日报格式不完整。' }, origin);
       }
-      const result = scheduleReport(JSON.parse(choice.message.content).items, note);
       if (!result.entries.length) return reply(422, { error: '没有识别到工作事项，请补充当天做了什么。' }, origin);
       return reply(200, result, origin);
-    } catch {
-      return reply(502, { error: 'AI 没有返回可用日报，请重试。' }, origin);
+    } catch (error) {
+      if (error.name === 'TimeoutError' || error.name === 'AbortError') {
+        return reply(504, { error: '模型响应超时，请稍后重试。' }, origin);
+      }
+      return reply(502, { code: 'provider_unavailable', error: 'AI 服务暂未成功响应。' }, origin);
     }
   }
 };
