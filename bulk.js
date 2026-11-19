@@ -203,6 +203,7 @@
           redirect: 'error'
         });
         if (!response.ok) {
+          failure = `AI 服务返回错误（HTTP ${response.status}），简述已保留，请重试。`;
           if (response.status === 401) {
             $('aiAccess').open = true;
             failure = 'AI 访问口令不正确，请检查后重试。';
@@ -212,6 +213,13 @@
             failure = '未识别到工作事项，请补充当天做了什么。';
           } else if (response.status === 503) {
             failure = 'AI 接口尚未完成配置。';
+          } else if (response.status === 502) {
+            const detail = await response.json().catch(() => null);
+            if (detail?.code === 'provider_key_invalid') {
+              failure = '硅基流动 API Key 无效，请在 Cloudflare 更新 SILICONFLOW_API_KEY。';
+            } else {
+              failure = '模型生成失败，简述已保留，请重试。';
+            }
           }
           throw new Error('Generation failed');
         }

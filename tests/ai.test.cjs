@@ -28,6 +28,7 @@ test('Worker routes only the current description to the fixed free model and ret
   const call = t.mock.method(globalThis, 'fetch', async (url, options) => {
     assert.equal(url, 'https://api.siliconflow.cn/v1/chat/completions');
     assert.equal(options.headers.Authorization, 'Bearer fake-upstream-key');
+    assert.equal(options.redirect, 'manual');
     const body = JSON.parse(options.body);
     assert.equal(body.model, 'Qwen/Qwen2.5-7B-Instruct');
     assert.equal(body.messages[1].content, note);
@@ -61,6 +62,12 @@ test('Worker rejects unconfigured, unauthenticated, throttled and excessive requ
 test('Worker handles provider failures and incomplete model output without returning a partial draft', async t => {
   const fetch = t.mock.method(globalThis, 'fetch', async () => new Response(null, { status: 429 }));
   assert.equal((await requestWorker()).status, 429);
+  fetch.mock.mockImplementation(async () => new Response(null, { status: 401 }));
+  const invalidKey = await requestWorker();
+  assert.equal(invalidKey.status, 502);
+  assert.equal((await invalidKey.json()).code, 'provider_key_invalid');
+  fetch.mock.mockImplementation(async () => Response.redirect('https://example.com'));
+  assert.equal((await requestWorker()).status, 502);
   fetch.mock.mockImplementation(async () => Response.json({ choices: [{ finish_reason: 'length' }] }));
   assert.equal((await requestWorker()).status, 502);
 });
@@ -103,7 +110,8 @@ test('embedded AI returns a preview for the selected date and preserves the manu
 });
 
 test('provider failure keeps the current preview and the description', async () => {
-  const { elements: el } = setup({}, { bulk: true, aiFetch: async () => new Response(null, { status: 429 }) });
+  let response = new Response(null, { status: 429 });
+  const { elements: el } = setup({}, { bulk: true, aiFetch: async () => response });
   await el.bulkButton.fire('click');
   el.source.value = '08:00—12:00\n原有预览';
   await el.parse.fire('click');
@@ -114,6 +122,10 @@ test('provider failure keeps the current preview and the description', async () 
   assert.equal(el.aiNote.value, note);
   assert.equal(el.rows.children, original);
   assert.match(el.aiStatus.textContent, /限流/);
+  response = Response.json({ code: 'provider_key_invalid' }, { status: 502 });
+  await el.aiGenerate.fire('click');
+  assert.match(el.aiStatus.textContent, /SILICONFLOW_API_KEY/);
+  assert.equal(el.rows.children, original);
 });
 
 test('a pending AI response cannot replace a newer pasted preview', async () => {

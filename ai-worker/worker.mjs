@@ -63,7 +63,8 @@ export default {
       } });
     }
     if (request.method !== 'POST') return reply(405, { error: '请求方式不受支持。' }, origin);
-    if (!env.SILICONFLOW_API_KEY || !/^[A-Za-z0-9_-]{24,128}$/.test(env.AI_ACCESS_TOKEN || '') || !env.AI_RATE_LIMIT) {
+    const apiKey = env.SILICONFLOW_API_KEY?.trim();
+    if (!apiKey || !/^[A-Za-z0-9_-]{24,128}$/.test(env.AI_ACCESS_TOKEN || '') || !env.AI_RATE_LIMIT) {
       return reply(503, { error: 'AI 服务尚未配置。' }, origin);
     }
     if (!await matchesToken(request.headers.get('Authorization') || '', env.AI_ACCESS_TOKEN)) {
@@ -79,8 +80,9 @@ export default {
       if (!success) return reply(429, { error: '生成过于频繁，请稍后重试。' }, origin);
       const upstream = await fetch(endpoint, {
         method: 'POST',
-        redirect: 'error',
-        headers: { Authorization: 'Bearer ' + env.SILICONFLOW_API_KEY, 'Content-Type': 'application/json' },
+        // Workers supports "manual". Reject any redirect through the !ok check below.
+        redirect: 'manual',
+        headers: { Authorization: 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model,
           messages: [{ role: 'system', content: prompt }, { role: 'user', content: note }],
@@ -90,6 +92,9 @@ export default {
         }),
         signal: AbortSignal.timeout(25000)
       });
+      if (upstream.status === 401) {
+        return reply(502, { code: 'provider_key_invalid', error: '硅基流动未接受 API Key。' }, origin);
+      }
       if (upstream.status === 429) return reply(429, { error: '免费模型当前限流，请稍后重试。' }, origin);
       if (!upstream.ok) return reply(502, { error: '硅基流动暂未成功响应，请稍后重试。' }, origin);
       const payload = await upstream.json();
