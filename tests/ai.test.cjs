@@ -61,6 +61,23 @@ test('Worker rejects unconfigured, unauthenticated, throttled and excessive requ
   assert.equal(fetch.mock.callCount(), 0);
 });
 
+test('AI polishes terse work descriptions and keeps specific details and results', async t => {
+  const descriptions = [
+    '查看锦园监控。', '查看商云', '远程看福源监控系统。', '陪同市标检查。',
+    '查看锦园监控录像，发现一处画面异常。', '查看商云系统日志。', '维修单元门磁吸锁，待配件。'
+  ];
+  t.mock.method(globalThis, 'fetch', async () => Response.json({ choices: [{
+    finish_reason: 'stop',
+    message: { content: JSON.stringify({ items: descriptions.map(content => item(content, 'morning')) }) }
+  }] }));
+  const response = await requestWorker({ note: descriptions.join('；') });
+  assert.equal(response.status, 200);
+  assert.deepEqual((await response.json()).entries.map(row => row.content), [
+    '查看锦园监控运行情况。', '查看商云运行。', '远程查看福源监控系统运行情况。', '陪同市标检查，配合现场检查工作。',
+    ...descriptions.slice(4)
+  ]);
+});
+
 test('remembering a device requires the access code and issues a limited 30-day credential', async t => {
   let now = Date.now();
   t.mock.method(Date, 'now', () => now);
