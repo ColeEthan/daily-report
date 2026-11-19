@@ -4,6 +4,11 @@ const windows = {
 };
 const periods = new Set(['morning', 'afternoon', 'unknown', 'untimed', 'morning_off', 'afternoon_off', 'day_off']);
 const timePattern = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
+const estimateStep = 30;
+
+function roundUp(minutes) {
+  return Math.ceil(minutes / estimateStep) * estimateStep;
+}
 
 function toMinutes(time) {
   const [hour, minute] = time.split(':').map(Number);
@@ -13,6 +18,31 @@ function toMinutes(time) {
 function toClock(minutes) {
   const pad = value => String(value).padStart(2, '0');
   return pad(Math.floor(minutes / 60)) + ':' + pad(minutes % 60);
+}
+
+function mentionedStartBounds(note) {
+  const pattern = /(?:(上午|下午|晚上|傍晚)\s*)?(?:(\d{1,2})[:：]([0-5]\d)|(\d{1,2}|[一二两三四五六七八九十]{1,2})点\s*(半)?)(?:\s*(?:以后|之后|后))/g;
+  const spokenHours = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十', '十一', '十二'];
+  const bounds = [];
+  for (const [, part, hours, minutes, spoken, half] of note.matchAll(pattern)) {
+    let hour = Number(hours ?? spoken);
+    if (Number.isNaN(hour)) hour = spoken === '两' ? 2 : spokenHours.indexOf(spoken);
+    if (hour < 0 || hour > 23) continue;
+    if (part && part !== '上午' && hour > 0 && hour < 12) hour += 12;
+    bounds.push(hour * 60 + (minutes ? Number(minutes) : half ? 30 : 0));
+  }
+  return new Set(bounds);
+}
+
+function keepBoundsOpen(work, note) {
+  for (const bound of mentionedStartBounds(note)) {
+    const matches = work.filter(item => item.start && toMinutes(item.start) === bound);
+    // Restore the original meaning when the model turns an "after" constraint
+    // into a start-only entry. Leave explicit ranges and ambiguous matches alone.
+    if (matches.length !== 1 || matches[0].end) continue;
+    matches[0].start = '';
+    matches[0].notBefore = Math.max(matches[0].notBefore, bound);
+  }
 }
 
 function normalizeItem(item) {
@@ -35,7 +65,10 @@ function normalizeItem(item) {
   } else if (start) {
     period = toMinutes(start) < 720 ? 'morning' : 'afternoon';
   }
-  return { content: item.content.trim(), period, start, end, nextDay };
+  const notBefore = typeof item.notBefore === 'string' && timePattern.test(item.notBefore) ? toMinutes(item.notBefore) : 0;
+  if (period === 'unknown' && notBefore >= 720) period = 'afternoon';
+  const weight = item.effort === 'short' ? 1 : item.effort === 'long' ? 3 : 2;
+  return { content: item.content.trim(), period, start, end, nextDay, notBefore, weight };
 }
 
 function occupiedBy(item) {
@@ -75,9 +108,36 @@ function assignUnknownPeriods(items, off) {
   });
 }
 
-export function scheduleReport(items) {
+function estimateSlot([from, until], group) {
+  const end = Math.floor(until / estimateStep) * estimateStep;
+  const planned = [];
+  let cursor = roundUp(from);
+  for (const item of group) {
+    cursor = Math.max(cursor, roundUp(item.notBefore));
+    if (cursor + estimateStep > end) break;
+    planned.push(item);
+    cursor += estimateStep;
+  }
+  cursor = roundUp(from);
+  let weightLeft = planned.reduce((total, item) => total + item.weight, 0);
+  planned.forEach((item, index) => {
+    const start = Math.max(cursor, roundUp(item.notBefore));
+    const slotsLeft = (end - start) / estimateStep;
+    const reserved = planned.length - index - 1;
+    const ideal = Math.round(slotsLeft * item.weight / weightLeft);
+    const slots = Math.max(1, Math.min(ideal, slotsLeft - reserved));
+    cursor = start + slots * estimateStep;
+    weightLeft -= item.weight;
+    item.start = toClock(start);
+    item.end = toClock(cursor);
+  });
+  return planned.length > 0;
+}
+
+export function scheduleReport(items, note = '') {
   if (!Array.isArray(items) || items.length > 12) throw new Error('Invalid items');
   const work = items.map(normalizeItem);
+  keepBoundsOpen(work, note);
   const off = new Set();
   for (const { period } of work) {
     if (period === 'day_off' || period === 'morning_off') off.add('morning');
@@ -92,28 +152,28 @@ export function scheduleReport(items) {
     const slots = gapsBetween(start, end, occupied);
     const inPeriod = work.filter(item => item.period === period && !item.start);
     if (!inPeriod.length || !slots.length) continue;
-    // Give each group a contiguous slot. Leave a row undated if there is
-    // no usable slot between the explicitly timed rows that surround it.
+    // Keep estimates between explicit work times. Leave the time blank
+    // when even one half-hour block cannot fit.
     const groups = new Map();
+    let previousSlotStart = start;
     for (const item of inPeriod) {
       const index = work.indexOf(item);
       const previous = work.slice(0, index).findLast(other => other.start && other.period === period);
       const following = work.slice(index + 1).find(other => other.start && other.period === period);
       const earliest = previous ? occupiedBy(previous)[1] : start;
       const latest = following ? toMinutes(following.start) : end;
-      const slot = slots.filter(([from, until]) => from >= earliest && until <= latest)
-        .sort((a, b) => (b[1] - b[0]) - (a[1] - a[0]))[0];
+      const available = ([from, until]) => Math.floor(until / estimateStep) * estimateStep -
+        roundUp(Math.max(from, item.notBefore));
+      const slot = slots.filter(([from, until]) => from >= Math.max(earliest, previousSlotStart) && until <= latest)
+        .filter(gap => available(gap) >= estimateStep)
+        .sort((a, b) => available(b) - available(a))[0];
       if (!slot) continue;
+      previousSlotStart = slot[0];
       if (!groups.has(slot)) groups.set(slot, []);
       groups.get(slot).push(item);
     }
-    for (const [[from, until], group] of groups) {
-      if (until - from < group.length) continue;
-      group.forEach((item, index) => {
-        item.start = toClock(from + Math.floor((until - from) * index / group.length));
-        item.end = toClock(from + Math.floor((until - from) * (index + 1) / group.length));
-      });
-      estimated = true;
+    for (const [slot, group] of groups) {
+      if (estimateSlot(slot, group)) estimated = true;
     }
   }
   return { estimated, entries: work.map(({ content, start, end, nextDay }) => ({ content, start, end, nextDay })) };

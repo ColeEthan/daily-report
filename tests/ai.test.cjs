@@ -31,6 +31,8 @@ test('Worker routes only the current description to the fixed free model and ret
     assert.equal(options.redirect, 'manual');
     const body = JSON.parse(options.body);
     assert.equal(body.model, 'Qwen/Qwen2.5-7B-Instruct');
+    assert.match(body.messages[0].content, /不使用“开展”/);
+    assert.match(body.messages[0].content, /景园或颈园→锦园/);
     assert.equal(body.messages[1].content, note);
     return Response.json({ choices: [{
       finish_reason: 'stop',
@@ -83,6 +85,42 @@ test('schedule preserves explicit and overnight times and reserves the stated ha
   ]);
   assert.deepEqual(result.entries.map(({ start, end, nextDay }) => [start, end, nextDay]), [
     ['08:00', '10:00', false], ['10:00', '11:00', false], ['11:00', '12:00', false], ['', '', false], ['22:00', '01:30', true]
+  ]);
+});
+
+test('estimates use half-hours, give longer work more time and honor an afternoon lower bound', async () => {
+  const { scheduleReport } = await import('../ai-worker/schedule.mjs');
+  const result = scheduleReport([
+    { ...item('维修门禁', 'morning'), effort: 'long' },
+    { ...item('查看监控', 'morning'), effort: 'short' },
+    { ...item('查看电梯', 'afternoon'), notBefore: '14:30', effort: 'short' }
+  ]);
+  assert.deepEqual(result.entries.map(({ start, end }) => [start, end]), [
+    ['08:00', '11:00'], ['11:00', '12:00'], ['14:30', '17:30']
+  ]);
+});
+
+test('preserves exact times and leaves excess items untimed instead of inventing minute-by-minute estimates', async () => {
+  const { scheduleReport } = await import('../ai-worker/schedule.mjs');
+  const actual = item('处理故障', 'morning', '09:17', '10:25');
+  const result = scheduleReport([
+    item('查看监控', 'morning'), actual,
+    ...Array.from({ length: 4 }, (_, index) => item('后续事项' + index, 'morning'))
+  ]);
+  assert.deepEqual(result.entries.map(({ start, end }) => [start, end]), [
+    ['08:00', '09:00'], ['09:17', '10:25'],
+    ['10:30', '11:00'], ['11:00', '11:30'], ['11:30', '12:00'], ['', '']
+  ]);
+});
+
+test('keeps a start-only meeting open and recovers a spoken lower bound mislabeled by the model', async () => {
+  const { scheduleReport } = await import('../ai-worker/schedule.mjs');
+  const result = scheduleReport([
+    item('查看电梯', 'afternoon', '14:30'),
+    item('田园开会', 'afternoon', '16:30')
+  ], '下午两点半以后查看电梯，16:30田园开会。');
+  assert.deepEqual(result.entries.map(({ start, end }) => [start, end]), [
+    ['14:30', '16:30'], ['16:30', '']
   ]);
 });
 
