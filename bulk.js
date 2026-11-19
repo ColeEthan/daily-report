@@ -54,6 +54,8 @@
   }
   function renderRows() {
     $('rows').replaceChildren();
+    const timeFields = [];
+    const boundaries = entries.map(entry => ({ ...entry }));
     entries.forEach((entry, index) => {
       const row = node('div', '', 'entry'), head = node('div', '', 'entryHead');
       const status = node('span'); status.setAttribute('data-status', '');
@@ -62,14 +64,33 @@
       remove.addEventListener('click', () => { entries.splice(index, 1); renderRows(); update(); stash(); });
       head.append(node('strong', `第 ${index + 1} 条`), status, remove); row.append(head);
       const times = node('div', '', 'fields');
+      const fields = timeFields[index] = {};
       for (const [key, label] of [['start', '开始时间'], ['end', '结束时间']]) {
         const wrap = node('label', label), input = node('input'); input.type = 'time'; input.value = entry[key];
-        input.addEventListener('input', () => { entry[key] = input.value; update(); stash(); });
+        fields[key] = input;
+        input.addEventListener('input', () => {
+          entry[key] = input.value;
+          if (key === 'end') {
+            const previous = boundaries[index];
+            const shift = C.shiftLinkedTimes(entries, index, previous, entry);
+            for (const change of shift?.changes || []) {
+              const following = entries[change.index];
+              following.start = timeFields[change.index].start.value = change.start;
+              following.end = timeFields[change.index].end.value = change.end;
+              boundaries[change.index] = { ...following };
+            }
+            // Preserve the link when a temporary end value cannot be applied.
+            if (entries[index + 1]?.start !== previous.end) boundaries[index] = { ...entry };
+            if (shift?.blocked) message('联动后的时间会占用间隔、与后续时段重叠或跨天，请核对后续时间。');
+            else if (shift?.changes.length) message(`已同步调整后续 ${shift.changes.length} 条记录的时间。`);
+          }
+          update(); stash();
+        });
         wrap.append(input); times.append(wrap);
       }
       row.append(times);
       const check = node('label', '', 'check'), checkbox = node('input'); checkbox.type = 'checkbox'; checkbox.checked = entry.nextDay;
-      checkbox.addEventListener('change', () => { entry.nextDay = checkbox.checked; update(); stash(); });
+      checkbox.addEventListener('change', () => { entry.nextDay = checkbox.checked; boundaries[index] = { ...entry }; update(); stash(); });
       check.append(checkbox, document.createTextNode('次日结束')); row.append(check);
       const label = node('label', '工作内容'), content = node('textarea'); content.rows = 3; content.maxLength = 20000; content.value = entry.content;
       content.addEventListener('input', () => { entry.content = content.value; update(); stash(); });

@@ -41,6 +41,36 @@
     assert(!nextDay || (start && end), '跨夜工作请填写开始和结束时间');
     assert(!start || !end || nextDay || end > start, '结束时间应晚于开始时间；跨夜工作请勾选“次日结束”');
   }
+  function shiftLinkedTimes(entries, index, previous, edited) {
+    const end = edited.end;
+    if (!timeValue(previous.end) || entries[index + 1]?.start !== previous.end || end === previous.end ||
+        previous.nextDay || edited.nextDay || previous.legacyTime || edited.legacyTime) return null;
+    if (!timeValue(end) || !timeValue(edited.start) || end <= edited.start) return null;
+
+    const minutes = time => Number(time.slice(0, 2)) * 60 + Number(time.slice(3));
+    const clock = value => String(Math.floor(value / 60)).padStart(2, '0') + ':' + String(value % 60).padStart(2, '0');
+    const delta = minutes(end) - minutes(previous.end);
+    const changes = [];
+    let boundary = previous.end;
+    let nextIndex = index + 1;
+    for (; nextIndex < entries.length; nextIndex++) {
+      const following = entries[nextIndex];
+      if (!boundary || following.start !== boundary || following.legacyTime || following.nextDay ||
+          (following.end && (!timeValue(following.end) || following.end <= following.start))) break;
+      const start = minutes(following.start) + delta;
+      const finish = following.end ? minutes(following.end) + delta : start;
+      if (finish >= 1440) return { changes: [], blocked: true };
+      changes.push({ index: nextIndex, start: clock(start), end: following.end ? clock(finish) : '' });
+      boundary = following.end;
+    }
+    const fixedStart = entries[nextIndex]?.start;
+    const last = changes.at(-1);
+    const shiftedEnd = last ? last.end || last.start : end;
+    if (timeValue(fixedStart) && (shiftedEnd > fixedStart || (shiftedEnd === fixedStart && boundary < fixedStart))) {
+      return { changes: [], blocked: true };
+    }
+    return changes.length ? { changes, blocked: false } : null;
+  }
   function shortTime(value) { return value ? value.replace(/^0/, '') : ''; }
   function entryTime(entry) {
     if (entry.legacyTime) return entry.legacyTime;
@@ -254,5 +284,5 @@
     if (!state.preferredName) state.preferredName = incoming.preferredName;
     return { state: validateState(state), stats };
   }
-  return { STORAGE_KEY, LEGACY_KEY, NAME_KEY, clone, validDate, today, displayDate, id, emptyState, validateRange, entryTime, isEmptyDraft, validateState, migrateLegacy, load, createWriter, save, makeEntry, buildReport, exportBackup, parseBackup, mergeBackup };
+  return { STORAGE_KEY, LEGACY_KEY, NAME_KEY, clone, validDate, today, displayDate, id, emptyState, validateRange, shiftLinkedTimes, entryTime, isEmptyDraft, validateState, migrateLegacy, load, createWriter, save, makeEntry, buildReport, exportBackup, parseBackup, mergeBackup };
 });

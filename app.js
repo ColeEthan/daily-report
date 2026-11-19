@@ -259,9 +259,19 @@
       const next = withForm();
       next.reports[selectedDate] ||= { name: $('userName').value.trim(), entries: [] };
       const entries = next.reports[selectedDate].entries;
+      let shift = null;
       if (editingId) {
         const index = entries.findIndex(item => item.id === editingId);
         if (index < 0) throw new Error('原记录已不存在，请将内容另存为新记录');
+        shift = C.shiftLinkedTimes(entries, index, entries[index], entry);
+        if (shift?.blocked) {
+          notice('联动后的时间会占用间隔、与后续时段重叠或跨天。请调整结束时间后再保存。');
+          return;
+        }
+        for (const change of shift?.changes || []) {
+          entries[change.index].start = change.start;
+          entries[change.index].end = change.end;
+        }
         entries[index] = entry;
       } else entries.push(entry);
       delete next.drafts[selectedDate];
@@ -271,7 +281,8 @@
       loadForm();
       renderEntries();
       $('saveStatus').textContent = '记录已保存';
-      if (continueAt) $('timeFeedback').textContent = `下一条从 ${continueAt} 开始，可修改或清空时间。`;
+      if (shift?.changes.length) $('timeFeedback').textContent = `已同步调整后续 ${shift.changes.length} 条记录的时间。`;
+      else if (continueAt) $('timeFeedback').textContent = `下一条从 ${continueAt} 开始，可修改或清空时间。`;
     } catch (error) { notice(errorMessage(error)); }
   }
   function editEntry(id) {

@@ -71,18 +71,23 @@ test('only the administrator can approve and only the requesting browser can gen
   assert.equal(model.mock.callCount(), 1);
 });
 
-test('an expired application cannot be approved, and a repeat approval does not extend access', async t => {
+test('access expires 180 days after approval and repeat approval does not extend it', async t => {
+  const day = 24 * 60 * 60 * 1000;
   let now = Date.now();
   t.mock.method(Date, 'now', () => now);
   const { send } = await fixture(t);
   const first = await (await send('/approval/request')).json();
   const approve = id => send('/approval/manage', { action: 'approve', id }, adminCode);
-  now += 24 * 60 * 60 * 1000;
+  now += day;
   assert.equal((await approve(first.id)).status, 404);
   const second = await (await send('/approval/request')).json();
+  now += day / 2;
   const approved = await (await approve(second.id)).json();
+  assert.equal(approved.expiresAt, now + 180 * day);
   now += 1000;
   assert.equal((await (await approve(second.id)).json()).expiresAt, approved.expiresAt);
+  now = approved.expiresAt - 1;
+  assert.equal((await (await send('/approval/status', {}, second.credential)).json()).state, 'approved');
   now = approved.expiresAt;
   assert.equal((await send('/approval/status', {}, second.credential)).status, 404);
 });

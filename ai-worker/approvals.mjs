@@ -1,5 +1,5 @@
 const pendingLifetime = 24 * 60 * 60 * 1000;
-const accessLifetime = 30 * pendingLifetime;
+const accessLifetime = 180 * pendingLifetime;
 const idPattern = /^[A-Za-z0-9_-]{22}$/;
 const claimPattern = /^Bearer colleague\.v1\.([A-Za-z0-9_-]{22})\.([A-Za-z0-9_-]{43})$/;
 const encoder = new TextEncoder();

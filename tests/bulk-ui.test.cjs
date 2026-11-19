@@ -29,6 +29,36 @@ test('save commits once, repeated click is disabled, and source edits invalidate
   const stored=a.values.get(C.STORAGE_KEY); await a.elements.save.fire('click'); assert.equal(a.values.get(C.STORAGE_KEY),stored);
   await a.elements.source.fire('input'); assert.equal(a.elements.preview.hidden,true); assert.equal(a.elements.save.disabled,true);
 });
+test('changing a preview end immediately shifts the following block and saves all time edits', async () => {
+  const app = setup();
+  app.elements.source.value = '日期：2026-11-02\n08:00—09:00 巡检\n09:00—10:00 维修\n10:00—11:00 检查\n13:30—17:30 整理资料';
+  await app.elements.parse.fire('click');
+  const field = (row, column) => app.elements.rows.children[row].children[1].children[column].children[0];
+
+  field(0, 1).value = '12:00';
+  await field(0, 1).fire('input');
+  assert.equal(field(1, 0).value, '09:00');
+  assert.equal(field(2, 0).value, '10:00');
+  assert.match(app.elements.message.textContent, /请核对后续时间/);
+  field(0, 1).value = '';
+  await field(0, 1).fire('input');
+  field(0, 1).value = '09:30';
+  await field(0, 1).fire('input');
+  assert.equal(field(1, 0).value, '09:30');
+  assert.equal(field(1, 1).value, '10:30');
+  assert.equal(field(2, 0).value, '10:30');
+  assert.equal(field(2, 1).value, '11:30');
+
+  field(1, 1).value = '10:00';
+  await field(1, 1).fire('input');
+  assert.equal(field(2, 0).value, '10:00');
+  assert.equal(field(3, 0).value, '13:30');
+  await app.elements.save.fire('click');
+  const { entries } = JSON.parse(app.values.get(C.STORAGE_KEY)).reports['2026-11-02'];
+  assert.deepEqual(entries.map(({ start, end }) => [start, end]), [
+    ['08:00', '09:30'], ['09:30', '10:00'], ['10:00', '11:00'], ['13:30', '17:30']
+  ]);
+});
 test('quota failure keeps original storage and editable preview',async()=>{
   const options={fail:true},a=setup(options); await preview(a); await a.elements.save.fire('click');
   assert.equal(a.values.has(C.STORAGE_KEY),false); assert.equal(a.elements.preview.hidden,false); assert.match(a.elements.message.textContent,/空间不足/);

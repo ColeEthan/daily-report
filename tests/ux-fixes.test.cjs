@@ -104,6 +104,44 @@ test('editing confirms a user time draft but silently replaces an automatic cont
   assert.ok(app.saved().drafts[date].entryId);
 });
 
+test('saving an edited end moves the linked work while keeping its duration and afternoon start', async () => {
+  const app = setup();
+  await app.elements.duration60.fire('click');
+  await add(app, '巡检');
+  await app.elements.duration60.fire('click');
+  await add(app, '维修');
+  await app.elements.duration60.fire('click');
+  await add(app, '检查');
+  await app.elements.afternoonStartButton.fire('click');
+  await app.elements.duration60.fire('click');
+  await add(app, '整理资料');
+
+  await action(app, 0, '编辑').fire('click');
+  app.elements.timeEnd.value = '12:00';
+  await app.elements.timeEnd.fire('input');
+  await app.elements.entryForm.fire('submit');
+  assert.match(app.elements.notice.textContent, /请调整结束时间/);
+  assert.equal(app.saved().reports[date].entries[0].end, '09:00');
+
+  app.elements.timeEnd.value = '09:30';
+  await app.elements.timeEnd.fire('input');
+  assert.equal(app.saved().reports[date].entries[1].start, '09:00');
+  await app.elements.entryForm.fire('submit');
+  let entries = app.saved().reports[date].entries;
+  assert.deepEqual(entries.map(({ start, end }) => [start, end]), [
+    ['08:00', '09:30'], ['09:30', '10:30'], ['10:30', '11:30'], ['13:30', '14:30']
+  ]);
+
+  await action(app, 1, '编辑').fire('click');
+  app.elements.timeEnd.value = '10:00';
+  await app.elements.timeEnd.fire('input');
+  await app.elements.entryForm.fire('submit');
+  entries = app.saved().reports[date].entries;
+  assert.deepEqual(entries.map(({ start, end }) => [start, end]), [
+    ['08:00', '09:30'], ['09:30', '10:00'], ['10:00', '11:00'], ['13:30', '14:30']
+  ]);
+});
+
 test('generating a report warns about a user time draft but not a continuation', async () => {
   let app = setup({}, { confirm: false });
   await add(app, '已有记录');
