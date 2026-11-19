@@ -215,7 +215,7 @@
       const time = entryTime(entry);
       let content = entry.content.trim().replace(/[。.，,；;]+$/g, '');
       if (!/[！？!?]$/.test(content)) content += '。';
-      return `${time ? `${time}，` : ''}${content}`;
+      return time ? `${time} ${content}` : content;
     });
     return `${displayDate(date)}\n${title}\n${lines.join('\n')}\n`;
   }

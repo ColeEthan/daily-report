@@ -1,6 +1,7 @@
 (function () {
   'use strict';
   const C = DailyReport, B = DailyReportBulk, $ = id => document.getElementById(id);
+  const sourceInput = $('source');
   const host = window.DailyReportBulkHost;
   const writer = host ? host.writer : C.createWriter(navigator.locks), draftKey = 'daily_report_bulk_draft_v1';
   let state = C.emptyState(), raw = null, healthy = false, entries = [], previewRaw = null, plan = null;
@@ -11,7 +12,7 @@
   function stash() {
     dirty = true;
     try { sessionStorage.setItem(draftKey, JSON.stringify({
-      source: $('source').value, date: $('date').value, name: $('name').value, entries,
+      source: sourceInput.value, date: $('date').value, name: $('name').value, entries,
       preview: !$('preview').hidden, estimated: $('aiEstimate')?.hidden === false,
       needsTimeReview: $('aiTimeReview')?.hidden === false
     })); }
@@ -103,7 +104,7 @@
   try {
     const cached = JSON.parse(sessionStorage.getItem(draftKey) || 'null');
     if (cached && typeof cached.source === 'string') {
-      $('source').value = cached.source;
+      sourceInput.value = cached.source;
       if (C.validDate(cached.date)) $('date').value = cached.date;
       if (typeof cached.name === 'string') $('name').value = cached.name;
       if (cached.preview && Array.isArray(cached.entries)) {
@@ -139,18 +140,18 @@
     if (previewRaw === null && $('preview').hidden) previewRaw = raw;
     if (previousRaw !== raw) previewRaw = undefined;
     if (healthy) $('lockStatus').textContent = writer.active
-      ? '整份粘贴后一次识别、一次保存，无需逐项填写。'
+      ? ''
       : '当前页面为只读。请关闭其他日报页面，再刷新本页；当前输入会暂存。';
-    if (healthy && writer.active && !$('preview').hidden && previewRaw !== raw) $('lockStatus').textContent = '日报记录已有变化，请点击“识别并预览”重新检查后保存。';
+    if (healthy && writer.active && !$('preview').hidden && previewRaw !== raw) $('lockStatus').textContent = '日报记录已有变化，请重新预览后保存。';
     $('retry').hidden = true;
     update();
   }
   if (host) host.subscribe(refreshHost);
   $('retry').addEventListener('click', acquire);
-  $('source').addEventListener('input', () => {
+  sourceInput.addEventListener('input', () => {
     previewRevision++;
     entries = []; plan = null; $('preview').hidden = true;
-    message('文字已修改，请重新识别。'); stash(); enableSave();
+    message(''); stash(); enableSave();
   });
   function showPreview(parsed) {
     load();
@@ -165,15 +166,20 @@
     if (timeReview) timeReview.hidden = !parsed.needsTimeReview;
     renderRows(); update(); stash();
   }
-  $('parse').addEventListener('click', () => {
+  function parseSource(decision) {
     try {
-      showPreview(B.parse($('source').value));
+      if (decision?.error) throw decision.error;
+      const parsed = decision?.parsed || B.parse(sourceInput.value);
+      const selectedDate = host && $('reportDate').value;
+      showPreview({ ...parsed, date: parsed.date || (C.validDate(selectedDate) ? selectedDate : '') });
       message(`已识别 ${entries.length} 条，请在下方检查日期、时间和内容。`);
+      $('preview').scrollIntoView?.({ block: 'start' });
     } catch (error) {
       previewRevision++;
       plan = null; $('preview').hidden = true; enableSave(); message(error.message); stash();
     }
-  });
+  }
+  $('parse').addEventListener('click', () => parseSource());
   const aiSection = host && $('aiSection');
   if (aiSection?.dataset?.endpoint) {
     let endpoint;
@@ -187,25 +193,65 @@
     }
   }
   function setupAi(endpoint) {
-    aiSection.hidden = false;
-    $('bulkButton').textContent = 'AI 生成日报 / 批量录入';
     if (location.protocol === 'file:') {
-      $('bulkEntryHint').textContent = '此文件可粘贴日报，AI 生成请打开正式网页。';
-      $('aiForm').hidden = true;
       $('aiLocalNotice').hidden = false;
       return;
     }
-    $('bulkEntryHint').textContent = '说一句今天做了什么，让 AI 整理，或粘贴整份日报。';
-    const noteInput = $('aiNote');
+    aiSection.hidden = false;
+    const intake = $('intake');
+    const parse = $('parse');
+    const generate = $('aiGenerate');
+    const status = $('aiStatus');
+    let choice = null;
+    let active = null;
+    function showChoices(decision = null) {
+      choice = decision;
+      intake.hidden = !!choice;
+      parse.hidden = !choice;
+      generate.hidden = !choice;
+    }
+    function stopActive() {
+      if (!active) return;
+      active.abort();
+      active = null;
+      intake.disabled = generate.disabled = false;
+    }
+    showChoices();
+    sourceInput.addEventListener('input', () => {
+      stopActive();
+      status.textContent = '';
+      showChoices();
+    });
+    parse.addEventListener('click', () => {
+      stopActive();
+      status.textContent = '';
+    });
+    intake.addEventListener('click', () => {
+      const note = sourceInput.value.trim();
+      if (!note) {
+        message('请填写工作内容或粘贴整份日报。');
+        sourceInput.focus();
+        return;
+      }
+      const decision = B.inspectInput(note);
+      if (decision.mode === 'local') {
+        stopActive();
+        status.textContent = '';
+        parseSource(decision);
+      } else if (decision.mode === 'choose') {
+        status.textContent = '';
+        showChoices(decision);
+        message('有些事项没有明确时间。按原文录入会留空，AI 整理可帮你拆分和估排。');
+      } else {
+        return generateReport();
+      }
+    });
     const accessInput = $('aiToken');
     const remember = $('aiRememberDevice');
     const forget = $('aiForgetDevice');
     const accessSummary = $('aiAccessSummary');
     const deviceStorageKey = 'daily_report_ai_device_v1:' + endpoint.href;
     const devicePattern = /^device\.v1\.\d{10}\.[A-Za-z0-9_-]{16}\.[A-Za-z0-9_-]{43}$/;
-    const generate = $('aiGenerate');
-    const status = $('aiStatus');
-    let active = null;
     function readDevice() {
       let token = '';
       try { token = localStorage.getItem(deviceStorageKey) || ''; }
@@ -238,24 +284,31 @@
         status.textContent = '浏览器未能清除本机记忆。';
         return;
       }
-      active?.abort();
+      stopActive();
       accessInput.value = '';
       remember.checked = false;
       status.textContent = '已忘记此设备，下次生成时请输入口令。';
       approvals?.refresh();
     });
-    $('bulkDialog').addEventListener('close', () => active?.abort());
-    generate.addEventListener('click', async () => {
+    $('bulkDialog').addEventListener('close', stopActive);
+    generate.addEventListener('click', () => generateReport(choice?.parsed));
+    async function generateReport(parsed) {
       if (active) return;
-      const note = noteInput.value.trim();
+      const note = sourceInput.value.trim();
       const entered = accessInput.value.trim();
       const token = entered || readDevice();
       if (!note) {
-        status.textContent = '请先填写工作简述。';
-        noteInput.focus();
+        status.textContent = '请先填写工作内容。';
+        sourceInput.focus();
+        return;
+      }
+      if (note.length > 1800) {
+        status.textContent = 'AI 一次最多整理 1800 字。可以缩短后再试，或按原文录入。';
+        parse.hidden = false;
         return;
       }
       if (!token) {
+        parse.hidden = false;
         if (approvals?.hasPending()) {
           status.textContent = 'AI 权限还在等待审批，请稍后查询。';
           return;
@@ -266,12 +319,13 @@
         return;
       }
       const rememberRequested = !!entered && remember.checked;
-      const requestedDate = $('reportDate').value;
+      const requestedDate = parsed?.date || $('reportDate').value;
       const revision = previewRevision;
       const controller = new AbortController();
       active = controller;
       const timer = setTimeout(() => controller.abort(), 30000);
-      generate.disabled = true;
+      intake.disabled = generate.disabled = true;
+      message('');
       status.textContent = '正在生成日报…';
       let failure = 'AI 暂时无法连接，简述已保留，请重试。';
       try {
@@ -283,6 +337,8 @@
           credentials: 'omit',
           redirect: 'error'
         });
+        if (active !== controller || revision !== previewRevision) return;
+        if (controller.signal.aborted) throw new Error('Generation timed out');
         if (!response.ok) {
           failure = `AI 服务返回错误（HTTP ${response.status}），简述已保留，请重试。`;
           if (response.status === 401) {
@@ -327,13 +383,11 @@
         const generated = result.entries.map(entry => C.makeEntry({
           content: entry.content, start: entry.start, end: entry.end, nextDay: entry.nextDay
         }));
-        if (controller.signal.aborted) return;
-        if (note !== noteInput.value.trim() || revision !== previewRevision) {
-          status.textContent = '输入或预览已变化，请重新生成。';
-          return;
-        }
+        if (controller.signal.aborted) throw new Error('Generation timed out');
+        if (note !== sourceInput.value.trim() || revision !== previewRevision) return;
         showPreview({
           date: C.validDate(requestedDate) ? requestedDate : C.today(),
+          name: parsed?.name,
           entries: generated,
           estimated: result.estimated === true,
           needsTimeReview: result.needsTimeReview === true
@@ -354,13 +408,18 @@
         message('');
         $('preview').scrollIntoView({ block: 'start' });
       } catch {
-        status.textContent = controller.signal.aborted ? '生成已中止，简述已保留。' : failure;
+        if (active === controller && revision === previewRevision) {
+          status.textContent = controller.signal.aborted ? '生成超时，输入已保留，请重试。' : failure;
+          parse.hidden = false;
+        }
       } finally {
         clearTimeout(timer);
-        active = null;
-        generate.disabled = false;
+        if (active === controller) {
+          active = null;
+          intake.disabled = generate.disabled = false;
+        }
       }
-    });
+    }
   }
   $('date').addEventListener('change', () => { update(); stash(); });
   $('name').addEventListener('input', () => { update(); stash(); });
@@ -369,7 +428,7 @@
     if ($('save').disabled) return;
     try {
       if (!healthy || !writer.active) throw new Error('尚未取得保存权限，请重新连接保存');
-      if (previewRaw !== raw || localStorage.getItem(C.STORAGE_KEY) !== previewRaw) throw new Error('日报数据已有变化，请点击“识别并预览”重新检查后保存。当前输入仍保留。');
+      if (previewRaw !== raw || localStorage.getItem(C.STORAGE_KEY) !== previewRaw) throw new Error('日报数据已有变化，请重新预览后保存。当前输入仍保留。');
       const checked = B.prepare(state, $('date').value, $('name').value, entries);
       if (!checked.added || (checked.warnings.length && !$('confirm').checked)) return;
       raw = host ? host.save(checked.state, previewRaw, $('date').value) : C.save(localStorage, checked.state, previewRaw, writer);

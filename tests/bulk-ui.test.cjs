@@ -31,9 +31,11 @@ test('save commits once, repeated click is disabled, and source edits invalidate
 });
 test('changing a preview end immediately shifts the following block and saves all time edits', async () => {
   const app = setup();
-  app.elements.source.value = '日期：2026-11-02\n08:00—09:00 巡检\n09:00—10:00 维修\n10:00—11:00 检查\n13:30—17:30 整理资料';
+  app.elements.source.value = '日期：2026-11-02\n1、8： 00-9： 00： 巡检\n2、9： 00-10： 00： 维修\n3、10： 00-11： 00： 检查\n4、13： 30-17： 30： 整理资料';
   await app.elements.parse.fire('click');
   const field = (row, column) => app.elements.rows.children[row].children[1].children[column].children[0];
+  assert.equal(field(0, 0).value, '08:00');
+  assert.equal(field(0, 1).value, '09:00');
 
   field(0, 1).value = '12:00';
   await field(0, 1).fire('input');

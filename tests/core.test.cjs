@@ -53,7 +53,8 @@ test('time validation distinguishes omitted, incomplete, reversed and explicit o
   assert.equal(C.entryTime({ start: '18:00', end: '08:00', nextDay: true }), '18:00-次日8:00');
 });
 test('empty name gives a single title and historical report retains its own name', () => {
-  assert.match(C.buildReport(date, { name: '', entries: [entry()] }), /^2026年9月5日\n工作汇报\n/);
+  assert.equal(C.buildReport(date, { name: '', entries: [entry('one', '调试摄像头，已完成')] }),
+    '2026年9月5日\n工作汇报\n8:00-9:30 调试摄像头，已完成。\n');
   const state = sample();
   state.preferredName = '李工';
   assert.match(C.buildReport(date, state.reports[date]), /张工工作汇报/);

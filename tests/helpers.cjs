@@ -40,8 +40,8 @@ function setup(initial = {}, options = {}) {
   const context = { DailyReport: core, document, window, localStorage: storage, navigator: { ...options.navigator, locks: Object.hasOwn(options, 'locks') ? options.locks : fakeLocks() }, Date: Clock, Blob, URL: { createObjectURL: () => 'blob:backup', revokeObjectURL() {} }, confirm: () => options.confirm !== false, setTimeout() {}, setInterval() {} };
   vm.runInNewContext(source, context);
   if (options.bulk) {
-    for (const id of ['preview', 'warnings', 'confirmWrap', 'retry', 'aiEstimate']) elements[id].hidden = true;
-    const session = new Map();
+    for (const id of ['preview', 'warnings', 'confirmWrap', 'retry', 'aiEstimate', 'aiSection', 'intake', 'aiGenerate', 'aiLocalNotice']) elements[id].hidden = true;
+    const session = options.session || new Map();
     context.DailyReportBulk = require('../bulk-core.js');
     context.sessionStorage = { getItem: key => session.get(key) ?? null, setItem: (key, value) => session.set(key, value), removeItem: key => session.delete(key) };
     if (options.aiFetch) {

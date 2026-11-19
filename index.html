@@ -9,12 +9,12 @@
 <meta name="description" content="随手记录每日工作，编辑补录、自动保存草稿，一键生成日报与备份。">
 <title>工作日报</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%93%8B%3C/text%3E%3C/svg%3E">
-<script src="core.js?v=20261119-time-link" defer></script>
-<script src="bulk-core.js?v=20261102" defer></script>
+<script src="core.js?v=20261119-report-time-space" defer></script>
+<script src="bulk-core.js?v=20261119-ai-intake" defer></script>
 <script src="app.js?v=20261119-time-link" defer></script>
 <script src="ai-approvals.js?v=20261119" defer></script>
-<script src="bulk.js?v=20261119-time-link" defer></script>
-<link rel="stylesheet" href="bulk-embedded.css?v=20261119-ai-approval">
+<script src="bulk.js?v=20261119-ai-intake" defer></script>
+<link rel="stylesheet" href="bulk-embedded.css?v=20261119-ai-intake">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -356,8 +356,8 @@
 <main>
   <div id="notice" class="notice" role="alert" hidden></div>
   <section class="input-area" aria-label="填写日报">
-    <button type="button" class="bulk-open" id="bulkButton">📥 批量录入整份日报</button>
-    <p class="hint" id="bulkEntryHint">已有完整日报？点这里粘贴，一次保存全部记录。</p>
+    <button type="button" class="bulk-open" id="bulkButton">AI 录入</button>
+    <p class="hint">说几句今天做了什么，或粘贴整份日报。</p>
     <div class="date-row">
       <div><label for="reportDate">记录日期</label><input type="date" id="reportDate" required></div>
       <button type="button" id="todayButton" class="text-button">回到今天</button>
@@ -425,15 +425,21 @@
   </div>
 </dialog>
 <dialog id="bulkDialog" aria-labelledby="bulkTitle"><div class="dialog-content">
-<div class="bulk-bar"><h3 id="bulkTitle">批量录入整份日报</h3><button type="button" data-close="bulkDialog">返回日报</button></div>
+<div class="bulk-bar"><h3 id="bulkTitle">AI 录入</h3><button type="button" data-close="bulkDialog">返回日报</button></div>
 <div id="lockStatus" class="notice" role="status"></div><button id="retry" class="secondary" hidden>重新连接保存</button>
-<section id="aiSection" data-endpoint="https://daily-report-ai.chengyinan1990.workers.dev/generate" hidden>
-  <h2>AI 生成日报</h2>
-  <p id="aiLocalNotice" hidden>当前打开的是本地文件。请<a href="https://coleethan.github.io/daily-report/">打开正式日报网页</a>使用 AI 生成。</p>
-  <div id="aiForm">
-  <label for="aiNote">工作简述</label>
-  <textarea id="aiNote" rows="3" maxlength="1800" placeholder="上午福源修门禁和刷卡，下午锦园看电梯"></textarea>
-  <p class="hint">用手机键盘可直接语音输入。点击生成后，这段简述会发送给硅基流动整理。</p>
+<section>
+  <label for="source">工作内容</label>
+  <textarea id="source" rows="5" maxlength="100000" placeholder="例如：上午福源修门禁，下午锦园看电梯。也可以粘贴整份日报。"></textarea>
+  <p class="hint">按原文录入会保留已有时间。使用 AI 整理时，这里输入的文字会发给硅基流动。</p>
+  <div class="bulk-actions">
+    <button id="intake" type="button" hidden>生成并预览</button>
+    <button id="parse" type="button" class="secondary">按原文录入</button>
+    <button id="aiGenerate" type="button" hidden>AI 整理</button>
+  </div>
+  <p id="message" role="status" aria-live="polite"></p>
+  <p id="aiStatus" role="status"></p>
+  <p id="aiLocalNotice" hidden>请<a href="https://coleethan.github.io/daily-report/">打开正式日报网页</a>使用 AI 整理。</p>
+  <div id="aiSection" data-endpoint="https://daily-report-ai.chengyinan1990.workers.dev/generate" hidden>
   <div class="ai-approval-tools">
     <button id="aiRequestAccess" type="button">申请 AI 权限</button>
     <div id="aiPendingActions" hidden>
@@ -451,13 +457,10 @@
     <label class="check"><input id="aiRememberDevice" type="checkbox">记住此设备 30 天</label>
     <button id="aiForgetDevice" type="button" hidden>忘记此设备</button>
   </details>
-  <button id="aiGenerate" type="button">生成并预览</button>
   <button id="aiManageApprovals" type="button" class="ai-manage-open">管理授权</button>
-  <p id="aiStatus" role="status"></p>
   </div>
 </section>
-<section><h2>1. 粘贴日报</h2><label for="source">完整文字</label><textarea id="source" rows="10" maxlength="100000" placeholder="工作日报&#10;日期：2026-11-02&#10;姓名：高翔&#10;&#10;08:00—12:00&#10;检修福源门禁及刷卡设备。&#10;&#10;13:30—17:30&#10;前往锦园查看电梯。"></textarea><p class="hint">支持时间与内容同行、分行、只有开始时间，以及无时间的休班事项。多行内容会保留在同一时间段内。</p><button id="parse">识别并预览</button><p id="message" role="status" aria-live="polite"></p></section>
-<section id="preview" hidden><h2>2. 检查记录</h2><div class="fields"><label>日期<input id="date" type="date"></label><label>姓名<input id="name" maxlength="100" placeholder="可不填"></label></div><p id="summary"></p><p id="aiEstimate" class="hint" hidden>部分时间是自动估排，请核对后保存。</p><p id="aiTimeReview" class="hint" hidden>有的时间没能识别，已保留工作内容。可在下方补填时间。</p><div id="rows"></div><div id="warnings" class="notice" hidden></div><label id="confirmWrap" class="check" hidden><input id="confirm" type="checkbox">我已查看上述提示，仍要追加这些记录</label><button id="save">保存到当天</button><p id="saveResult" role="status" aria-live="polite"></p><p class="hint">记录将追加到所选日期，完全重复的内容会跳过。原有日报和填写草稿会保留。</p></section>
+<section id="preview" hidden><h2>检查记录</h2><div class="fields"><label>日期<input id="date" type="date"></label><label>姓名<input id="name" maxlength="100" placeholder="可不填"></label></div><p id="summary"></p><p id="aiEstimate" class="hint" hidden>部分时间是自动估排，请核对后保存。</p><p id="aiTimeReview" class="hint" hidden>部分时间需要核对，可在对应条目中修改。</p><div id="rows"></div><div id="warnings" class="notice" hidden></div><label id="confirmWrap" class="check" hidden><input id="confirm" type="checkbox">我已查看上述提示，仍要追加这些记录</label><button id="save">保存到当天</button><p id="saveResult" role="status" aria-live="polite"></p><p class="hint">记录将追加到所选日期，完全重复的内容会跳过。原有日报和填写草稿会保留。</p></section>
 <button type="button" class="bulk-finish" data-close="bulkDialog">完成，返回日报</button></div></dialog>
 <dialog id="aiApprovalDialog" aria-labelledby="aiApprovalTitle">
   <div class="dialog-content">

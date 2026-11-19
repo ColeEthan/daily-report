@@ -184,6 +184,53 @@ test('keeps a start-only meeting open and recovers a spoken lower bound mislabel
   ]);
 });
 
+test('reconciles a stated time range in mixed prose before estimating other work', async () => {
+  const { scheduleReport } = await import('../ai-worker/schedule.mjs');
+  const mixed = '上午修门禁，下午 14： 30–16：00 去锦园看电梯';
+  const generated = [item('维修门禁。', 'morning'), item('查看锦园电梯。', 'afternoon', '14:00', '17:00')];
+  const result = scheduleReport(generated, mixed);
+  assert.deepEqual(result.entries.map(({ start, end }) => [start, end]), [['08:00', '12:00'], ['14:30', '16:00']]);
+  assert.equal(result.needsTimeReview, false);
+  const uncertain = scheduleReport([item('整理其他资料。', 'afternoon')], mixed);
+  assert.equal(uncertain.needsTimeReview, true);
+});
+
+test('the same input previews complete reports locally and asks before processing untimed items', async () => {
+  let modelCalls = 0;
+  const { elements: el } = setup({}, { bulk: true, aiFetch: async (_url, options) => {
+    modelCalls++;
+    assert.match(JSON.parse(options.body).note, /检查门禁/);
+    return Response.json({ entries: [{ start: '08:00', end: '11:00', nextDay: false, content: '检查门禁。' }] });
+  } });
+  const time = (row, column) => el.rows.children[row].children[1].children[column].children[0].value;
+  await el.bulkButton.fire('click');
+  el.source.value = '2026年11月19日\n测试员工作汇报\n1、8： 00-11： 00：检查门禁。';
+  await el.source.fire('input');
+  await el.intake.fire('click');
+  assert.equal(el.preview.hidden, false);
+  assert.equal(el.date.value, '2026-11-19');
+  assert.equal(el.name.value, '测试员');
+  assert.deepEqual([time(0, 0), time(0, 1)], ['08:00', '11:00']);
+  assert.equal(modelCalls, 0);
+
+  el.source.value += '\n2、整理资料。';
+  await el.source.fire('input');
+  await el.intake.fire('click');
+  assert.equal(el.intake.hidden, true);
+  assert.equal(el.parse.hidden, false);
+  assert.equal(el.aiGenerate.hidden, false);
+  assert.equal(el.preview.hidden, true);
+  await el.parse.fire('click');
+  assert.equal(el.rows.children.length, 2);
+  assert.deepEqual([time(1, 0), time(1, 1)], ['', '']);
+  assert.equal(modelCalls, 0);
+  el.aiToken.value = token;
+  await el.aiGenerate.fire('click');
+  assert.equal(modelCalls, 1);
+  assert.equal(el.date.value, '2026-11-19');
+  assert.equal(el.name.value, '测试员');
+});
+
 test('embedded AI returns a preview for the selected date and preserves the manual draft on save', async () => {
   const app = setup({}, { bulk: true, aiFetch: async (_url, options) => {
     assert.deepEqual(JSON.parse(options.body), { note });
@@ -195,9 +242,10 @@ test('embedded AI returns a preview for the selected date and preserves the manu
   await enter(app, '手动草稿');
   const original = app.values.get(C.STORAGE_KEY);
   await el.bulkButton.fire('click');
-  el.aiNote.value = note;
+  el.source.value = note;
+  await el.source.fire('input');
   el.aiToken.value = token;
-  await el.aiGenerate.fire('click');
+  await el.intake.fire('click');
   assert.equal(el.preview.hidden, false);
   assert.equal(el.save.disabled, false);
   assert.equal(el.aiEstimate.hidden, false);
@@ -208,22 +256,37 @@ test('embedded AI returns a preview for the selected date and preserves the manu
 });
 
 test('provider failure keeps the current preview and the description', async () => {
-  let response = new Response(null, { status: 429 });
+  let response = Response.json({ entries: [{ start: '08:00', end: '12:00', nextDay: false, content: '原有预览' }] });
   const { elements: el } = setup({}, { bulk: true, aiFetch: async () => response });
   await el.bulkButton.fire('click');
-  el.source.value = '08:00—12:00\n原有预览';
-  await el.parse.fire('click');
-  const original = el.rows.children;
-  el.aiNote.value = note;
+  el.source.value = note;
+  await el.source.fire('input');
   el.aiToken.value = token;
-  await el.aiGenerate.fire('click');
-  assert.equal(el.aiNote.value, note);
+  await el.intake.fire('click');
+  assert.equal(el.preview.hidden, false);
+  const original = el.rows.children;
+  response = new Response(null, { status: 429 });
+  await el.intake.fire('click');
+  assert.equal(el.source.value, note);
   assert.equal(el.rows.children, original);
   assert.match(el.aiStatus.textContent, /限流/);
   response = Response.json({ code: 'provider_key_invalid' }, { status: 502 });
-  await el.aiGenerate.fire('click');
+  await el.intake.fire('click');
   assert.match(el.aiStatus.textContent, /SILICONFLOW_API_KEY/);
   assert.equal(el.rows.children, original);
+});
+
+test('the unified input is restored when a failed or unfinished draft is reopened', async () => {
+  const session = new Map();
+  const aiFetch = async () => new Response(null, { status: 429 });
+  const first = setup({}, { bulk: true, aiFetch, session });
+  first.elements.source.value = note;
+  await first.elements.source.fire('input');
+  first.elements.aiToken.value = token;
+  await first.elements.intake.fire('click');
+  const reopened = setup({}, { bulk: true, aiFetch, session });
+  assert.equal(reopened.elements.source.value, note);
+  assert.equal(reopened.elements.preview.hidden, true);
 });
 
 test('the browser stores only the device credential, reuses it after reopening, and can forget it', async () => {
@@ -239,20 +302,20 @@ test('the browser stores only the device credential, reuses it after reopening, 
     });
   };
   const first = setup({}, { bulk: true, aiFetch, values });
-  first.elements.aiNote.value = note;
+  first.elements.source.value = note;
   first.elements.aiToken.value = token;
   first.elements.aiRememberDevice.checked = true;
-  await first.elements.aiGenerate.fire('click');
+  await first.elements.intake.fire('click');
   assert.deepEqual(received[0], ['Bearer ' + token, { note, rememberDevice: true }]);
   assert.deepEqual([...values.values()], [fakeDevice]);
   assert.equal(first.elements.aiToken.value, '');
   const next = setup({}, { bulk: true, aiFetch, values });
-  next.elements.aiNote.value = note;
-  await next.elements.aiGenerate.fire('click');
+  next.elements.source.value = note;
+  await next.elements.intake.fire('click');
   assert.deepEqual(received[1], ['Bearer ' + fakeDevice, { note }]);
   await next.elements.aiForgetDevice.fire('click');
   assert.equal(values.size, 0);
-  await next.elements.aiGenerate.fire('click');
+  await next.elements.intake.fire('click');
   assert.equal(received.length, 2);
   assert.match(next.elements.aiStatus.textContent, /请输入 AI 访问口令/);
 });
@@ -263,7 +326,8 @@ test('local file directs users to the online site without sending AI requests', 
     aiFetch: async () => assert.fail('local file requested the AI API')
   });
   await el.bulkButton.fire('click');
-  assert.equal(el.aiForm.hidden, true);
+  assert.equal(el.aiSection.hidden, true);
+  assert.equal(el.intake.hidden, true);
   assert.equal(el.aiLocalNotice.hidden, false);
   await el.aiGenerate.fire('click');
   el.source.value = '08:00—12:00\n手动粘贴测试';
@@ -276,15 +340,15 @@ test('a pending AI response cannot replace a newer pasted preview', async () => 
   const response = new Promise(resolve => { complete = resolve; });
   const { elements: el } = setup({}, { bulk: true, aiFetch: () => response });
   await el.bulkButton.fire('click');
-  el.aiNote.value = note;
+  el.source.value = note;
   el.aiToken.value = token;
-  const pending = el.aiGenerate.fire('click');
+  const pending = el.intake.fire('click');
   el.source.value = '08:00—12:00\n刚粘贴的预览';
   await el.source.fire('input');
-  await el.parse.fire('click');
+  await el.intake.fire('click');
   const original = el.rows.children;
   complete(Response.json({ entries: [{ start: '08:00', end: '12:00', nextDay: false, content: '延迟返回的结果' }] }));
   await pending;
   assert.equal(el.rows.children, original);
-  assert.match(el.aiStatus.textContent, /已变化/);
+  assert.equal(el.aiStatus.textContent, '');
 });

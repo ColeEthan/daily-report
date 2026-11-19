@@ -20,8 +20,29 @@ test('handles no-time work, open ended headings, Chinese colon and inline work',
   assert.equal(B.parse('17:30— 田园开会').entries[0].end, '');
   assert.equal(B.parse('8：00—12：00，检修：门禁').entries[0].content, '检修：门禁');
 });
+test('recognizes numbered report headings with spaced colons without rewriting descriptions', () => {
+  const parsed = B.parse([
+    '测试员工作汇报',
+    '1、8： 00-11： 00： 检查门禁：1-1-24层。',
+    '配合检查水表。',
+    '2. 11: 00—12:00 查看监控。',
+    '（3）１３ ： ３０－１５：００ 整理资料。',
+    '４）23 : 00至次日 01 : 30 夜间巡检。'
+  ].join('\n'));
+  assert.equal(parsed.name, '测试员');
+  assert.deepEqual(parsed.entries.map(({ start, end, nextDay, content }) => [start, end, nextDay, content]), [
+    ['08:00', '11:00', false, '检查门禁：1-1-24层。\n配合检查水表。'],
+    ['11:00', '12:00', false, '查看监控。'],
+    ['13:30', '15:00', false, '整理资料。'],
+    ['23:00', '01:30', true, '夜间巡检。']
+  ]);
+  assert.equal(B.parse('1、检查 13-2-102 室门禁。').entries[0].content, '1、检查 13-2-102 室门禁。');
+});
 test('invalid dates, multiple dates, invalid times and empty headings are never silently saved', () => {
   for (const input of ['日期：2026-02-30\n维修',source+'\n2026-11-03\n维修','25:00—26:00\n维修','12:00—08:00\n维修','8:99 维修','08:00—12:00','| 时间 | 内容 |']) assert.throws(() => B.parse(input));
+  for (const input of ['1、8： 0 工作', '1、8： 00 - 11： 0 工作', '1、8： 00 - 11： 000 工作']) {
+    assert.throws(() => B.parse(input), /第 1 行时间无法识别/);
+  }
 });
 test('append preserves existing days, names, drafts and skips identical records including within batch', () => {
   const state = C.emptyState('原姓名');

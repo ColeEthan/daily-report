@@ -54,6 +54,60 @@ function modelClock(value) {
   return timePattern.test(clock) ? clock : null;
 }
 
+function restoreSourceRanges(work, note) {
+  const rangePattern = /(?<![\d:])(?:(上午|下午|傍晚|晚上)[ \t]*)?(\d{1,2}[ \t]*:[ \t]*\d{2})[ \t]*[-—–~至到][ \t]*(?:(次日)[ \t]*)?(\d{1,2}[ \t]*:[ \t]*\d{2})(?![\d:])/g;
+  const compact = text => text.replace(/[^\p{L}\p{N}]/gu, '');
+  const readClock = (text, afternoon) => {
+    const clock = modelClock(text.replace(/[ \t]+/g, ''));
+    if (!clock) return null;
+    const minutes = toMinutes(clock);
+    return afternoon && minutes < 720 ? toClock(minutes + 720) : clock;
+  };
+  const ranges = [];
+  for (const clause of note.normalize('NFKC').split(/[,。;!?\r\n]+/)) {
+    const matches = [...clause.matchAll(rangePattern)];
+    for (const [match, period, from, overnight, until] of matches) {
+      const afternoon = !!period && period !== '上午';
+      const start = readClock(from, afternoon);
+      const end = readClock(until, afternoon && !overnight);
+      if (!start || !end || (!overnight && end <= start)) continue;
+      const context = matches.length === 1 ? compact(clause.replace(match, '')) : '';
+      ranges.push({ start, end, nextDay: !!overnight, context });
+    }
+  }
+  const exact = (item, range) => item.start === range.start && item.end === range.end && item.nextDay === range.nextDay;
+  const claimed = new Set();
+  const unmatched = [];
+  for (const range of ranges) {
+    const candidates = work.filter(item => !claimed.has(item) && !restContent.test(item.content) &&
+      !ranges.some(other => other !== range && exact(item, other) && !exact(item, range)));
+    const exactMatches = candidates.filter(item => exact(item, range));
+    const matchingClocks = candidates.filter(item => item.start === range.start || item.end === range.end);
+    const pairs = new Set();
+    for (let i = 0; i < range.context.length - 1; i++) pairs.add(range.context.slice(i, i + 2));
+    const ranked = candidates.map(item => {
+      const content = compact(item.content.normalize('NFKC'));
+      const score = [...pairs].filter(pair => content.includes(pair)).length;
+      return { item, score };
+    }).sort((a, b) => b.score - a.score);
+    const best = ranked[0];
+    const match = exactMatches.length === 1 ? exactMatches[0] :
+      best?.score >= 2 && best.score > (ranked[1]?.score || 0) ? best.item :
+      matchingClocks.length === 1 ? matchingClocks[0] : null;
+    if (!match) {
+      unmatched.push(range);
+      continue;
+    }
+    claimed.add(match);
+    match.start = range.start;
+    match.end = range.end;
+    match.nextDay = range.nextDay;
+    match.period = toMinutes(range.start) < 720 ? 'morning' : 'afternoon';
+    match.needsTimeReview = false;
+  }
+  return unmatched;
+}
+
 function normalizeItem(item) {
   if (!item || typeof item.content !== 'string' || !item.content.trim() || item.content.length > 500) {
     throw new Error('Invalid work item');
@@ -189,6 +243,7 @@ export function scheduleReport(items, note = '') {
   const work = items.map(normalizeItem);
   restoreExplicitRest(work, note);
   keepBoundsOpen(work, note);
+  const unresolvedRanges = restoreSourceRanges(work, note);
   const off = new Set();
   for (const { period } of work) {
     if (period === 'day_off' || period === 'morning_off') off.add('morning');
@@ -196,7 +251,7 @@ export function scheduleReport(items, note = '') {
   }
   assignUnknownPeriods(work, off);
   // Keep any explicitly reported intervals intact. The preview flags explicit conflicts.
-  const occupied = work.map(occupiedBy).filter(Boolean).sort(([a], [b]) => a - b);
+  const occupied = [...work, ...unresolvedRanges].map(occupiedBy).filter(Boolean).sort(([a], [b]) => a - b);
   let estimated = false;
   for (const [period, [start, end]] of Object.entries(windows)) {
     if (off.has(period)) continue;
@@ -229,7 +284,7 @@ export function scheduleReport(items, note = '') {
   }
   return {
     estimated,
-    needsTimeReview: work.some(item => item.needsTimeReview),
+    needsTimeReview: unresolvedRanges.length > 0 || work.some(item => item.needsTimeReview),
     entries: work.map(({ content, start, end, nextDay }) => ({ content, start, end, nextDay }))
   };
 }

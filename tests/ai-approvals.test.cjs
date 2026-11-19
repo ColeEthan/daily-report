@@ -126,8 +126,8 @@ test('a shared approval link opens the admin panel without carrying the colleagu
   assert.match(admin.elements.aiApprovalAdminStatus.textContent, /已批准/);
   await colleague.elements.aiCheckApproval.fire('click');
   assert.match(colleague.elements.aiApprovalStatus.textContent, /已开通/);
-  colleague.elements.aiNote.value = '测试巡检';
-  await colleague.elements.aiGenerate.fire('click');
+  colleague.elements.source.value = '测试巡检';
+  await colleague.elements.intake.fire('click');
   assert.equal(colleague.elements.preview.hidden, false);
   assert.equal(colleague.elements.aiToken.value, '');
 });
