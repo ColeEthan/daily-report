@@ -47,9 +47,13 @@ function setup(initial = {}, options = {}) {
     if (options.aiFetch) {
       elements.aiSection.dataset = { endpoint: 'https://worker.example/generate' };
       Object.assign(context, {
-        URL, AbortController, clearTimeout, fetch: options.aiFetch,
+        URL, URLSearchParams, AbortController, clearTimeout, fetch: options.aiFetch,
         location: new URL(options.location || 'https://coleethan.github.io/daily-report/')
       });
+    }
+    if (options.approvals) {
+      context.history = { replaceState() {} };
+      vm.runInNewContext(fs.readFileSync(require.resolve('../ai-approvals.js'), 'utf8'), context);
     }
     vm.runInNewContext(fs.readFileSync(require.resolve('../bulk.js'), 'utf8'), context);
   }

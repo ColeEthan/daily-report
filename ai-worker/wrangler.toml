@@ -14,3 +14,11 @@ simple = { limit = 6, period = 60 }
 
 [observability]
 enabled = false
+
+[[durable_objects.bindings]]
+name = "AI_APPROVALS"
+class_name = "AiApprovals"
+
+[[migrations]]
+tag = "ai-approvals-v1"
+new_sqlite_classes = ["AiApprovals"]

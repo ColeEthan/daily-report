@@ -189,7 +189,7 @@
       let token = '';
       try { token = localStorage.getItem(deviceStorageKey) || ''; }
       catch { /* AI can still be used by entering the access code. */ }
-      if (!devicePattern.test(token)) token = '';
+      if (!devicePattern.test(token) && !window.DailyReportApprovals?.proofPattern.test(token)) token = '';
       accessSummary.textContent = token ? 'AI 访问口令（本机已记住）' : 'AI 访问口令';
       forget.hidden = !token;
       return token;
@@ -203,6 +203,12 @@
       return true;
     }
     readDevice();
+    const approvals = window.DailyReportApprovals?.setup({ endpoint, readDevice, saveDevice, onApproved() {
+      accessInput.value = '';
+      remember.checked = false;
+      $('aiAccess').open = false;
+      status.textContent = '';
+    } });
     window.addEventListener('storage', event => {
       if (event.key === deviceStorageKey || event.key === null) readDevice();
     });
@@ -215,6 +221,7 @@
       accessInput.value = '';
       remember.checked = false;
       status.textContent = '已忘记此设备，下次生成时请输入口令。';
+      approvals?.refresh();
     });
     $('bulkDialog').addEventListener('close', () => active?.abort());
     generate.addEventListener('click', async () => {
@@ -228,6 +235,10 @@
         return;
       }
       if (!token) {
+        if (approvals?.hasPending()) {
+          status.textContent = 'AI 权限还在等待审批，请稍后查询。';
+          return;
+        }
         status.textContent = '请输入 AI 访问口令。';
         $('aiAccess').open = true;
         accessInput.focus();
@@ -259,7 +270,10 @@
               failure = 'AI 访问口令不正确，请检查后重试。';
             } else {
               if (readDevice() === token) saveDevice('');
-              failure = '本机记忆已失效，请重新输入 AI 访问口令。';
+              approvals?.refresh();
+              failure = window.DailyReportApprovals?.proofPattern.test(token)
+                ? '此设备授权已到期或被撤销，请重新申请。'
+                : '本机记忆已失效，请重新输入 AI 访问口令。';
             }
             accessInput.focus();
           } else if (response.status === 429) {
@@ -310,6 +324,7 @@
             accessInput.value = '';
             remember.checked = false;
             rememberMessage = '已记住此设备 30 天。';
+            approvals?.refresh();
           } else {
             rememberMessage = '本次未能记住设备。';
           }

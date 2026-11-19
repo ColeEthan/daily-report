@@ -1,4 +1,6 @@
 import { scheduleReport } from './schedule.mjs';
+import { colleagueMayGenerate, handleApproval, isApprovalPath, isColleagueAuthorization } from './approvals.mjs';
+export { AiApprovals } from './approvals.mjs';
 
 const model = 'Qwen/Qwen2.5-7B-Instruct';
 const endpoint = 'https://api.siliconflow.cn/v1/chat/completions';
@@ -78,7 +80,7 @@ async function verifyDevice(token, env, origin) {
   return crypto.subtle.verify('HMAC', await deviceKey(env), signature, deviceMessage(token.slice(0, separator), origin));
 }
 
-async function readInput(request) {
+async function readJson(request, maxBytes) {
   if (!request.body) return null;
   const decoder = new TextDecoder();
   const reader = request.body.getReader();
@@ -88,20 +90,20 @@ async function readInput(request) {
     const { done, value } = await reader.read();
     if (done) break;
     bytes += value.byteLength;
-    if (bytes > 12000) {
+    if (bytes > maxBytes) {
       await reader.cancel();
       return null;
     }
     body += decoder.decode(value, { stream: true });
   }
-  const { note, rememberDevice } = JSON.parse(body + decoder.decode());
-  if (typeof note !== 'string' || note.length > maxNoteLength || !note.trim()) return null;
-  return { note: note.trim(), rememberDevice: rememberDevice === true };
+  return JSON.parse(body + decoder.decode());
 }
 
 export default {
   async fetch(request, env) {
-    if (new URL(request.url).pathname !== '/generate') return reply(404, { error: '接口不存在。' });
+    const path = new URL(request.url).pathname;
+    const approvalPath = isApprovalPath(path);
+    if (path !== '/generate' && !approvalPath) return reply(404, { error: '接口不存在。' });
     const origin = request.headers.get('Origin');
     if (!env.APP_ORIGIN || origin !== env.APP_ORIGIN) return reply(403, { error: '来源不受支持。' });
     if (request.method === 'OPTIONS') {
@@ -113,22 +115,44 @@ export default {
       } });
     }
     if (request.method !== 'POST') return reply(405, { error: '请求方式不受支持。' }, origin);
+    if (approvalPath) {
+      try {
+        const response = await handleApproval(path, request, env, matchesToken, readJson);
+        const headers = new Headers(response.headers);
+        headers.set('Cache-Control', 'no-store');
+        headers.set('Vary', 'Origin');
+        headers.set('Access-Control-Allow-Origin', origin);
+        return new Response(response.body, { status: response.status, headers });
+      } catch {
+        return reply(503, { error: '审批服务暂未响应，请稍后重试。' }, origin);
+      }
+    }
     const apiKey = env.SILICONFLOW_API_KEY?.trim();
     if (!apiKey || !/^[A-Za-z0-9_-]{24,128}$/.test(env.AI_ACCESS_TOKEN || '') || !env.AI_RATE_LIMIT) {
       return reply(503, { error: 'AI 服务尚未配置。' }, origin);
     }
     const authorization = request.headers.get('Authorization') || '';
+    const colleague = isColleagueAuthorization(authorization);
     const deviceToken = authorization.startsWith('Bearer device.v1.') ? authorization.slice(7) : '';
-    const authenticated = deviceToken ? await verifyDevice(deviceToken, env, origin) : await matchesToken(authorization, env.AI_ACCESS_TOKEN);
+    let authenticated;
+    try {
+      if (colleague) authenticated = await colleagueMayGenerate(authorization, env.AI_APPROVALS);
+      else if (deviceToken) authenticated = await verifyDevice(deviceToken, env, origin);
+      else authenticated = await matchesToken(authorization, env.AI_ACCESS_TOKEN);
+    } catch {
+      return reply(503, { error: '授权服务暂未响应，请稍后重试。' }, origin);
+    }
     if (!authenticated) {
       return reply(401, { error: 'AI 访问口令不正确。' }, origin);
     }
     if (!/^application\/json(?:\s*;|$)/i.test(request.headers.get('Content-Type') || '')) {
       return reply(415, { error: '请求格式不受支持。' }, origin);
     }
-    const input = await readInput(request).catch(() => null);
-    if (!input) return reply(400, { error: '请填写工作简述，最多 1800 字。' }, origin);
-    const { note, rememberDevice } = input;
+    const input = await readJson(request, 12000).catch(() => null);
+    if (typeof input?.note !== 'string' || input.note.length > maxNoteLength || !input.note.trim()) {
+      return reply(400, { error: '请填写工作简述，最多 1800 字。' }, origin);
+    }
+    const note = input.note.trim();
     try {
       const { success } = await env.AI_RATE_LIMIT.limit({ key: 'report-generation' });
       if (!success) return reply(429, { error: '生成过于频繁，请稍后重试。' }, origin);
@@ -164,7 +188,7 @@ export default {
         return reply(502, { code: 'provider_output_invalid', error: '模型返回的日报格式不完整。' }, origin);
       }
       if (!result.entries.length) return reply(422, { error: '没有识别到工作事项，请补充当天做了什么。' }, origin);
-      if (rememberDevice && !deviceToken) result.deviceToken = await issueDevice(env, origin);
+      if (input.rememberDevice === true && !deviceToken && !colleague) result.deviceToken = await issueDevice(env, origin);
       return reply(200, result, origin);
     } catch (error) {
       if (error.name === 'TimeoutError' || error.name === 'AbortError') {

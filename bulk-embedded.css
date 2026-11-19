@@ -20,3 +20,11 @@
 #bulkDialog #aiAccess summary{cursor:pointer;width:fit-content}
 #bulkDialog #aiStatus{margin:8px 0 0;color:#215f4e}
 #bulkDialog #aiStatus:empty{display:none}
+#bulkDialog .ai-approval-tools { border-top: 1px solid #e2e8e4; border-bottom: 1px solid #e2e8e4; margin-bottom: 14px; padding: 12px 0 0; }
+#bulkDialog .ai-approval-tools button, #bulkDialog .ai-manage-open { background: #e5efea; color: #215f4e; }
+#bulkDialog #aiApprovalShareLink { width: 100%; margin-top: 10px; }
+#bulkDialog #aiApprovalStatus:empty { display: none; }
+#aiApprovalDialog .ai-admin-actions, #aiApprovalAdminList { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
+#aiApprovalDialog button { border: 0; border-radius: 8px; padding: 11px 14px; background: #edf2ee; color: #215f4e; font: inherit; cursor: pointer; }
+#aiApprovalDialog #aiApproveDevice { background: #186b53; color: white; }
+#aiApprovalDialog #aiRevokeDevice { background: #f8edeb; color: #983f31; }
