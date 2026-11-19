@@ -12,7 +12,7 @@
 <script src="core.js?v=20261030-report-no-numbering" defer></script>
 <script src="bulk-core.js?v=20261102" defer></script>
 <script src="app.js?v=20261102-bulk-integrated" defer></script>
-<script src="bulk.js?v=20261119-ai-recover" defer></script>
+<script src="bulk.js?v=20261119-ai-remember" defer></script>
 <link rel="stylesheet" href="bulk-embedded.css?v=20261119-ai">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -434,9 +434,11 @@
   <textarea id="aiNote" rows="3" maxlength="1800" placeholder="上午福源修门禁和刷卡，下午锦园看电梯"></textarea>
   <p class="hint">用手机键盘可直接语音输入。点击生成后，这段简述会发送给硅基流动整理。</p>
   <details id="aiAccess">
-    <summary>AI 访问口令</summary>
+    <summary id="aiAccessSummary">AI 访问口令</summary>
     <label for="aiToken" class="hint">输入部署时设置的独立口令</label>
     <input id="aiToken" type="password" autocomplete="off" maxlength="128" spellcheck="false">
+    <label class="check"><input id="aiRememberDevice" type="checkbox">记住此设备 30 天</label>
+    <button id="aiForgetDevice" type="button" hidden>忘记此设备</button>
   </details>
   <button id="aiGenerate" type="button">生成并预览</button>
   <p id="aiStatus" role="status"></p>

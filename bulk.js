@@ -177,14 +177,51 @@
     $('bulkEntryHint').textContent = '说一句今天做了什么，让 AI 整理，或粘贴整份日报。';
     const noteInput = $('aiNote');
     const accessInput = $('aiToken');
+    const remember = $('aiRememberDevice');
+    const forget = $('aiForgetDevice');
+    const accessSummary = $('aiAccessSummary');
+    const deviceStorageKey = 'daily_report_ai_device_v1:' + endpoint.href;
+    const devicePattern = /^device\.v1\.\d{10}\.[A-Za-z0-9_-]{16}\.[A-Za-z0-9_-]{43}$/;
     const generate = $('aiGenerate');
     const status = $('aiStatus');
     let active = null;
+    function readDevice() {
+      let token = '';
+      try { token = localStorage.getItem(deviceStorageKey) || ''; }
+      catch { /* AI can still be used by entering the access code. */ }
+      if (!devicePattern.test(token)) token = '';
+      accessSummary.textContent = token ? 'AI 访问口令（本机已记住）' : 'AI 访问口令';
+      forget.hidden = !token;
+      return token;
+    }
+    function saveDevice(token) {
+      try {
+        if (token) localStorage.setItem(deviceStorageKey, token);
+        else localStorage.removeItem(deviceStorageKey);
+      } catch { return false; }
+      readDevice();
+      return true;
+    }
+    readDevice();
+    window.addEventListener('storage', event => {
+      if (event.key === deviceStorageKey || event.key === null) readDevice();
+    });
+    forget.addEventListener('click', () => {
+      if (!saveDevice('')) {
+        status.textContent = '浏览器未能清除本机记忆。';
+        return;
+      }
+      active?.abort();
+      accessInput.value = '';
+      remember.checked = false;
+      status.textContent = '已忘记此设备，下次生成时请输入口令。';
+    });
     $('bulkDialog').addEventListener('close', () => active?.abort());
     generate.addEventListener('click', async () => {
       if (active) return;
       const note = noteInput.value.trim();
-      const token = accessInput.value.trim();
+      const entered = accessInput.value.trim();
+      const token = entered || readDevice();
       if (!note) {
         status.textContent = '请先填写工作简述。';
         noteInput.focus();
@@ -196,6 +233,7 @@
         accessInput.focus();
         return;
       }
+      const rememberRequested = !!entered && remember.checked;
       const requestedDate = $('reportDate').value;
       const revision = previewRevision;
       const controller = new AbortController();
@@ -208,7 +246,7 @@
         const response = await fetch(endpoint, {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ note }),
+          body: JSON.stringify(rememberRequested ? { note, rememberDevice: true } : { note }),
           signal: controller.signal,
           credentials: 'omit',
           redirect: 'error'
@@ -217,7 +255,13 @@
           failure = `AI 服务返回错误（HTTP ${response.status}），简述已保留，请重试。`;
           if (response.status === 401) {
             $('aiAccess').open = true;
-            failure = 'AI 访问口令不正确，请检查后重试。';
+            if (entered) {
+              failure = 'AI 访问口令不正确，请检查后重试。';
+            } else {
+              if (readDevice() === token) saveDevice('');
+              failure = '本机记忆已失效，请重新输入 AI 访问口令。';
+            }
+            accessInput.focus();
           } else if (response.status === 429) {
             failure = '免费模型暂时限流，请稍后重试。';
           } else if (response.status === 422) {
@@ -260,7 +304,17 @@
           needsTimeReview: result.needsTimeReview === true
         });
         $('aiAccess').open = false;
-        status.textContent = `已生成 ${generated.length} 条，确认后保存。`;
+        let rememberMessage = '';
+        if (rememberRequested) {
+          if (devicePattern.test(result.deviceToken || '') && saveDevice(result.deviceToken)) {
+            accessInput.value = '';
+            remember.checked = false;
+            rememberMessage = '已记住此设备 30 天。';
+          } else {
+            rememberMessage = '本次未能记住设备。';
+          }
+        }
+        status.textContent = `${rememberMessage}已生成 ${generated.length} 条，确认后保存。`;
         message('');
         $('preview').scrollIntoView({ block: 'start' });
       } catch {

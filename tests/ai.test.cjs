@@ -20,7 +20,7 @@ async function requestWorker(options = {}) {
   const { default: worker } = await import('../ai-worker/worker.mjs');
   const headers = { Origin: origin, Authorization: 'Bearer ' + token, 'Content-Type': 'application/json', ...options.headers };
   return worker.fetch(new Request('https://worker.example/generate', {
-    method: 'POST', body: JSON.stringify({ note: options.note ?? note }), headers
+    method: 'POST', body: JSON.stringify({ note: options.note ?? note, rememberDevice: options.remember }), headers
   }), { ...env, ...options.env });
 }
 
@@ -59,6 +59,34 @@ test('Worker rejects unconfigured, unauthenticated, throttled and excessive requ
   assert.equal((await requestWorker({ note: '长'.repeat(1801) })).status, 400);
   assert.equal((await requestWorker({ env: { AI_RATE_LIMIT: { limit: async () => ({ success: false }) } } })).status, 429);
   assert.equal(fetch.mock.callCount(), 0);
+});
+
+test('remembering a device requires the access code and issues a limited 30-day credential', async t => {
+  let now = Date.now();
+  t.mock.method(Date, 'now', () => now);
+  t.mock.method(globalThis, 'fetch', async (_url, options) => {
+    const upstream = JSON.parse(options.body);
+    assert.deepEqual(upstream.messages[1], { role: 'user', content: note });
+    return Response.json({ choices: [{
+      finish_reason: 'stop',
+      message: { content: JSON.stringify({ items: [item('测试巡检。', 'morning')] }) }
+    }] });
+  });
+  const ordinary = await requestWorker();
+  assert.equal((await ordinary.json()).deviceToken, undefined);
+  const first = await requestWorker({ remember: true });
+  const { deviceToken } = await first.json();
+  assert.match(deviceToken, /^device\.v1\./);
+  assert.equal(Number(deviceToken.split('.')[2]), Math.floor(now / 1000) + 30 * 86400);
+  const returning = { headers: { Authorization: 'Bearer ' + deviceToken }, remember: true };
+  const next = await requestWorker(returning);
+  assert.equal(next.status, 200);
+  assert.equal((await next.json()).deviceToken, undefined);
+  const forged = deviceToken.replace(/\.([A-Za-z0-9_-])([A-Za-z0-9_-]{42})$/, (_match, first, rest) => '.' + (first === 'A' ? 'B' : 'A') + rest);
+  assert.equal((await requestWorker({ headers: { Authorization: 'Bearer ' + forged } })).status, 401);
+  assert.equal((await requestWorker({ ...returning, env: { AI_ACCESS_TOKEN: 'another-long-test-passphrase' } })).status, 401);
+  now += 30 * 86400 * 1000;
+  assert.equal((await requestWorker(returning)).status, 401);
 });
 
 test('Worker handles provider failures and incomplete model output without returning a partial draft', async t => {
@@ -196,6 +224,37 @@ test('provider failure keeps the current preview and the description', async () 
   await el.aiGenerate.fire('click');
   assert.match(el.aiStatus.textContent, /SILICONFLOW_API_KEY/);
   assert.equal(el.rows.children, original);
+});
+
+test('the browser stores only the device credential, reuses it after reopening, and can forget it', async () => {
+  const values = new Map();
+  const fakeDevice = 'device.v1.1798000000.' + 'a'.repeat(16) + '.' + 'a'.repeat(43);
+  const received = [];
+  const aiFetch = async (_url, options) => {
+    const body = JSON.parse(options.body);
+    received.push([options.headers.Authorization, body]);
+    return Response.json({
+      ...(body.rememberDevice ? { deviceToken: fakeDevice } : {}),
+      entries: [{ start: '08:00', end: '12:00', nextDay: false, content: '测试巡检。' }]
+    });
+  };
+  const first = setup({}, { bulk: true, aiFetch, values });
+  first.elements.aiNote.value = note;
+  first.elements.aiToken.value = token;
+  first.elements.aiRememberDevice.checked = true;
+  await first.elements.aiGenerate.fire('click');
+  assert.deepEqual(received[0], ['Bearer ' + token, { note, rememberDevice: true }]);
+  assert.deepEqual([...values.values()], [fakeDevice]);
+  assert.equal(first.elements.aiToken.value, '');
+  const next = setup({}, { bulk: true, aiFetch, values });
+  next.elements.aiNote.value = note;
+  await next.elements.aiGenerate.fire('click');
+  assert.deepEqual(received[1], ['Bearer ' + fakeDevice, { note }]);
+  await next.elements.aiForgetDevice.fire('click');
+  assert.equal(values.size, 0);
+  await next.elements.aiGenerate.fire('click');
+  assert.equal(received.length, 2);
+  assert.match(next.elements.aiStatus.textContent, /请输入 AI 访问口令/);
 });
 
 test('local file directs users to the online site without sending AI requests', async () => {

@@ -4,6 +4,8 @@ const model = 'Qwen/Qwen2.5-7B-Instruct';
 const endpoint = 'https://api.siliconflow.cn/v1/chat/completions';
 const maxNoteLength = 1800;
 const encoder = new TextEncoder();
+const deviceLifetime = 30 * 24 * 60 * 60;
+const devicePattern = /^device\.v1\.(\d{10})\.[A-Za-z0-9_-]{16}\.[A-Za-z0-9_-]{43}$/;
 const prompt = `你是高翔的物业弱电工作汇报整理助手。把本次简述按顺序整理成事实准确、简单朴实的工作条目。
 
 写作要求：
@@ -42,8 +44,41 @@ async function matchesToken(presented, expected) {
   return diff === 0;
 }
 
-async function readNote(request) {
-  if (!request.body) return '';
+function encodeDevicePart(bytes) {
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function deviceKey(env) {
+  // Require both server secrets so a device credential cannot be used to
+  // guess a weak user-chosen access code offline.
+  const secret = env.SILICONFLOW_API_KEY.trim() + '\0' + env.AI_ACCESS_TOKEN;
+  return crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify']);
+}
+
+function deviceMessage(prefix, origin) {
+  return encoder.encode('daily-report:generate:' + origin + ':' + prefix);
+}
+
+async function issueDevice(env, origin) {
+  const expires = Math.floor(Date.now() / 1000) + deviceLifetime;
+  const nonce = encodeDevicePart(crypto.getRandomValues(new Uint8Array(12)));
+  const prefix = `device.v1.${expires}.${nonce}`;
+  const signature = await crypto.subtle.sign('HMAC', await deviceKey(env), deviceMessage(prefix, origin));
+  return prefix + '.' + encodeDevicePart(new Uint8Array(signature));
+}
+
+async function verifyDevice(token, env, origin) {
+  const match = devicePattern.exec(token);
+  if (!match || Number(match[1]) <= Math.floor(Date.now() / 1000)) return false;
+  const separator = token.lastIndexOf('.');
+  const bytes = atob(token.slice(separator + 1).replace(/-/g, '+').replace(/_/g, '/'));
+  const signature = Uint8Array.from(bytes, char => char.charCodeAt(0));
+  if (encodeDevicePart(signature) !== token.slice(separator + 1)) return false;
+  return crypto.subtle.verify('HMAC', await deviceKey(env), signature, deviceMessage(token.slice(0, separator), origin));
+}
+
+async function readInput(request) {
+  if (!request.body) return null;
   const decoder = new TextDecoder();
   const reader = request.body.getReader();
   let bytes = 0;
@@ -54,12 +89,13 @@ async function readNote(request) {
     bytes += value.byteLength;
     if (bytes > 12000) {
       await reader.cancel();
-      return '';
+      return null;
     }
     body += decoder.decode(value, { stream: true });
   }
-  const { note } = JSON.parse(body + decoder.decode());
-  return typeof note === 'string' && note.length <= maxNoteLength ? note.trim() : '';
+  const { note, rememberDevice } = JSON.parse(body + decoder.decode());
+  if (typeof note !== 'string' || note.length > maxNoteLength || !note.trim()) return null;
+  return { note: note.trim(), rememberDevice: rememberDevice === true };
 }
 
 export default {
@@ -80,14 +116,18 @@ export default {
     if (!apiKey || !/^[A-Za-z0-9_-]{24,128}$/.test(env.AI_ACCESS_TOKEN || '') || !env.AI_RATE_LIMIT) {
       return reply(503, { error: 'AI 服务尚未配置。' }, origin);
     }
-    if (!await matchesToken(request.headers.get('Authorization') || '', env.AI_ACCESS_TOKEN)) {
+    const authorization = request.headers.get('Authorization') || '';
+    const deviceToken = authorization.startsWith('Bearer device.v1.') ? authorization.slice(7) : '';
+    const authenticated = deviceToken ? await verifyDevice(deviceToken, env, origin) : await matchesToken(authorization, env.AI_ACCESS_TOKEN);
+    if (!authenticated) {
       return reply(401, { error: 'AI 访问口令不正确。' }, origin);
     }
     if (!/^application\/json(?:\s*;|$)/i.test(request.headers.get('Content-Type') || '')) {
       return reply(415, { error: '请求格式不受支持。' }, origin);
     }
-    const note = await readNote(request).catch(() => '');
-    if (!note) return reply(400, { error: '请填写工作简述，最多 1800 字。' }, origin);
+    const input = await readInput(request).catch(() => null);
+    if (!input) return reply(400, { error: '请填写工作简述，最多 1800 字。' }, origin);
+    const { note, rememberDevice } = input;
     try {
       const { success } = await env.AI_RATE_LIMIT.limit({ key: 'report-generation' });
       if (!success) return reply(429, { error: '生成过于频繁，请稍后重试。' }, origin);
@@ -123,6 +163,7 @@ export default {
         return reply(502, { code: 'provider_output_invalid', error: '模型返回的日报格式不完整。' }, origin);
       }
       if (!result.entries.length) return reply(422, { error: '没有识别到工作事项，请补充当天做了什么。' }, origin);
+      if (rememberDevice && !deviceToken) result.deviceToken = await issueDevice(env, origin);
       return reply(200, result, origin);
     } catch (error) {
       if (error.name === 'TimeoutError' || error.name === 'AbortError') {

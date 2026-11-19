@@ -33,7 +33,7 @@ function setup(initial = {}, options = {}) {
   const storage = { getItem: key => values.get(key) ?? null, setItem: (key, value) => {
     if (options.failWrites) throw Object.assign(new Error('full'), { name: 'QuotaExceededError' });
     values.set(key, value);
-  } };
+  }, removeItem: key => values.delete(key) };
   let now = new Date('2026-09-05T12:00:00');
   class Clock extends Date { constructor(...args) { super(...(args.length ? args : [now])); } static now() { return now.getTime(); } }
   const core = { ...C, today: () => C.today(now) };
