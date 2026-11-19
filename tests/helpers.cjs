@@ -13,6 +13,7 @@ function setup(initial = {}, options = {}) {
     setAttribute() {}
     querySelector() { return this.children[0].children[1]; }
     focus() {}
+    scrollIntoView() {}
     select() {}
     setSelectionRange() {}
     showModal() { this.open = true; }
@@ -39,10 +40,17 @@ function setup(initial = {}, options = {}) {
   const context = { DailyReport: core, document, window, localStorage: storage, navigator: { ...options.navigator, locks: Object.hasOwn(options, 'locks') ? options.locks : fakeLocks() }, Date: Clock, Blob, URL: { createObjectURL: () => 'blob:backup', revokeObjectURL() {} }, confirm: () => options.confirm !== false, setTimeout() {}, setInterval() {} };
   vm.runInNewContext(source, context);
   if (options.bulk) {
-    for (const id of ['preview', 'warnings', 'confirmWrap', 'retry']) elements[id].hidden = true;
+    for (const id of ['preview', 'warnings', 'confirmWrap', 'retry', 'aiEstimate']) elements[id].hidden = true;
     const session = new Map();
     context.DailyReportBulk = require('../bulk-core.js');
     context.sessionStorage = { getItem: key => session.get(key) ?? null, setItem: (key, value) => session.set(key, value), removeItem: key => session.delete(key) };
+    if (options.aiFetch) {
+      elements.aiSection.dataset = { endpoint: 'https://worker.example/generate' };
+      Object.assign(context, {
+        URL, AbortController, clearTimeout, fetch: options.aiFetch,
+        location: new URL('https://coleethan.github.io/daily-report/')
+      });
+    }
     vm.runInNewContext(fs.readFileSync(require.resolve('../bulk.js'), 'utf8'), context);
   }
   return { elements, values, document, window, storage, options, tick: value => { now = new Date(value); }, saved: () => JSON.parse(values.get(C.STORAGE_KEY)) };

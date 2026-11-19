@@ -1,0 +1,16 @@
+name = "daily-report-ai"
+main = "worker.mjs"
+compatibility_date = "2026-11-19"
+workers_dev = true
+preview_urls = false
+
+[vars]
+APP_ORIGIN = "https://coleethan.github.io"
+
+[[ratelimits]]
+name = "AI_RATE_LIMIT"
+namespace_id = "111902"
+simple = { limit = 6, period = 60 }
+
+[observability]
+enabled = false

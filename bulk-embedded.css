@@ -16,3 +16,7 @@
 #bulkDialog .remove{font-size:13px;padding:6px 10px;background:#f6eeeb;color:#8c4736}
 #bulkDialog .check{display:flex;align-items:center;gap:8px;margin:16px 0;line-height:1.6}#bulkDialog .check input{width:18px;height:18px;flex-shrink:0}
 #bulkDialog #warnings{background:#fff4dd;color:#744700}#bulkDialog #saveResult{color:#17614c;margin-top:12px}#bulkDialog [hidden]{display:none!important}
+#bulkDialog #aiAccess{margin:0 0 14px;color:#215f4e}
+#bulkDialog #aiAccess summary{cursor:pointer;width:fit-content}
+#bulkDialog #aiStatus{margin:8px 0 0;color:#215f4e}
+#bulkDialog #aiStatus:empty{display:none}
