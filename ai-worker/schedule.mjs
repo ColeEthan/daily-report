@@ -76,23 +76,34 @@ function restoreSourceRanges(work, note) {
     }
   }
   const exact = (item, range) => item.start === range.start && item.end === range.end && item.nextDay === range.nextDay;
+  const tasks = work.filter(item => !restContent.test(item.content));
   const claimed = new Set();
+  const conflicts = new Set();
   const unmatched = [];
   for (const range of ranges) {
-    const candidates = work.filter(item => !claimed.has(item) && !restContent.test(item.content) &&
+    const candidates = tasks.filter(item => !claimed.has(item) &&
       !ranges.some(other => other !== range && exact(item, other) && !exact(item, range)));
     const exactMatches = candidates.filter(item => exact(item, range));
     const matchingClocks = candidates.filter(item => item.start === range.start || item.end === range.end);
     const pairs = new Set();
     for (let i = 0; i < range.context.length - 1; i++) pairs.add(range.context.slice(i, i + 2));
-    const ranked = candidates.map(item => {
+    // Check the description independently of the model's clock assignments.
+    const ranked = tasks.map(item => {
       const content = compact(item.content.normalize('NFKC'));
-      const score = [...pairs].filter(pair => content.includes(pair)).length;
+      let score = [...pairs].filter(pair => content.includes(pair)).length;
+      if (content.length >= 2 && range.context.includes(content)) score = Math.max(2, score);
       return { item, score };
     }).sort((a, b) => b.score - a.score);
     const best = ranked[0];
+    const textMatch = best?.score >= 2 && best.score > (ranked[1]?.score || 0) ? best.item : null;
+    if (textMatch && exactMatches.length && !exactMatches.includes(textMatch)) {
+      conflicts.add(textMatch);
+      for (const item of exactMatches) conflicts.add(item);
+      unmatched.push(range);
+      continue;
+    }
     const match = exactMatches.length === 1 ? exactMatches[0] :
-      best?.score >= 2 && best.score > (ranked[1]?.score || 0) ? best.item :
+      candidates.includes(textMatch) ? textMatch :
       matchingClocks.length === 1 ? matchingClocks[0] : null;
     if (!match) {
       unmatched.push(range);
@@ -105,6 +116,7 @@ function restoreSourceRanges(work, note) {
     match.period = toMinutes(range.start) < 720 ? 'morning' : 'afternoon';
     match.needsTimeReview = false;
   }
+  for (const item of conflicts) item.needsTimeReview = true;
   return unmatched;
 }
 
@@ -285,6 +297,8 @@ export function scheduleReport(items, note = '') {
   return {
     estimated,
     needsTimeReview: unresolvedRanges.length > 0 || work.some(item => item.needsTimeReview),
-    entries: work.map(({ content, start, end, nextDay }) => ({ content, start, end, nextDay }))
+    entries: work.map(({ content, start, end, nextDay, needsTimeReview }) => ({
+      content, start, end, nextDay, ...(needsTimeReview && { needsTimeReview: true })
+    }))
   };
 }

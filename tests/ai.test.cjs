@@ -212,6 +212,31 @@ test('reconciles a stated time range in mixed prose before estimating other work
   assert.equal(uncertain.needsTimeReview, true);
 });
 
+test('swapped source times flag the affected preview rows, including after reload', async () => {
+  const { scheduleReport } = await import('../ai-worker/schedule.mjs');
+  const source = '检修门禁08:00-09:00，备份录像10:00-11:00，整理资料13:30-14:30';
+  const items = [
+    item('检修门禁', 'morning', '10:00', '11:00'),
+    item('备份录像', 'morning', '08:00', '09:00'),
+    item('整理资料', 'afternoon', '13:30', '14:30')
+  ];
+  const result = scheduleReport(items, source);
+  assert.equal(result.needsTimeReview, true);
+  assert.deepEqual(result.entries.map(e => !!e.needsTimeReview), [true, true, false]);
+  const options = { bulk: true, aiFetch: async () => Response.json(result), session: new Map() };
+  const first = setup({}, options).elements;
+  first.source.value = source;
+  await first.source.fire('input');
+  first.aiToken.value = token;
+  await first.intake.fire('click');
+  for (const ui of [first, setup({}, options).elements]) {
+    assert.equal(ui.preview.hidden, false);
+    assert.equal(ui.aiTimeReview.hidden, false);
+    assert.deepEqual(ui.rows.children.map(row => row.children[0].children.some(
+      node => node.textContent === '请核对本条时间')), [true, true, false]);
+  }
+});
+
 test('the same input previews complete reports locally and asks before processing untimed items', async () => {
   let modelCalls = 0;
   const { elements: el } = setup({}, { bulk: true, aiFetch: async (_url, options) => {

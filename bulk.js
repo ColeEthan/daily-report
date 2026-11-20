@@ -64,6 +64,7 @@
       remove.setAttribute('aria-label', `删除第 ${index + 1} 条`);
       remove.addEventListener('click', () => { entries.splice(index, 1); renderRows(); update(); stash(); });
       head.append(node('strong', `第 ${index + 1} 条`), status, remove); row.append(head);
+      if (entry.needsTimeReview) head.append(node('strong', '请核对本条时间'));
       const times = node('div', '', 'fields');
       const fields = timeFields[index] = {};
       for (const [key, label] of [['start', '开始时间'], ['end', '结束时间']]) {
@@ -108,7 +109,13 @@
       if (C.validDate(cached.date)) $('date').value = cached.date;
       if (typeof cached.name === 'string') $('name').value = cached.name;
       if (cached.preview && Array.isArray(cached.entries)) {
-        entries = cached.entries.map(e => C.makeEntry(e));
+        // Draft rows can be incomplete. prepare() validates them before saving.
+        entries = cached.entries.map(({ start, end, nextDay, content, needsTimeReview }) => {
+          if (typeof start !== 'string' || typeof end !== 'string' || typeof content !== 'string') {
+            throw new Error('预览草稿字段无效');
+          }
+          return { start, end, nextDay: nextDay === true, content, needsTimeReview: needsTimeReview === true };
+        });
         if (healthy) previewRaw = raw;
         const estimate = $('aiEstimate');
         if (estimate) estimate.hidden = cached.estimated !== true;
@@ -380,8 +387,9 @@
         if (!Array.isArray(result.entries) || !result.entries.length || result.entries.length > 15) {
           throw new Error('Invalid report');
         }
-        const generated = result.entries.map(entry => C.makeEntry({
-          content: entry.content, start: entry.start, end: entry.end, nextDay: entry.nextDay
+        const generated = result.entries.map(entry => ({
+          ...C.makeEntry({ content: entry.content, start: entry.start, end: entry.end, nextDay: entry.nextDay }),
+          needsTimeReview: entry.needsTimeReview === true
         }));
         if (controller.signal.aborted) throw new Error('Generation timed out');
         if (note !== sourceInput.value.trim() || revision !== previewRevision) return;

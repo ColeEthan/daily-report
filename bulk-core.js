@@ -77,7 +77,7 @@
       if (timed) {
         flush();
         current = timed;
-      } else if (listPrefix.test(lines[i])) {
+      } else if (listPrefix.test(line)) {
         flush();
         result.entries.push(C.makeEntry({ start: '', end: '', nextDay: false, content: line }));
       } else {

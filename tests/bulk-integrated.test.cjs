@@ -33,3 +33,34 @@ test('embedded bulk remains read only without locks or with corrupt storage',asy
     await preview(a); assert.equal(a.elements.save.disabled,true);
   }
 });
+
+test('reload restores every edited preview row while an incomplete row prevents saving', async () => {
+  const options = { bulk: true, session: new Map(), values: new Map() };
+  const first = setup({}, options);
+  await preview(first);
+  const content = (ui, index) => ui.rows.children[index].children[3].children[0];
+  const start = (ui, index) => ui.rows.children[index].children[1].children[0].children[0];
+  async function input(field, value) {
+    field.value = value;
+    await field.fire('input');
+  }
+  await input(content(first.elements, 0), '门禁故障，待厂家回复');
+  await input(content(first.elements, 1), '');
+  await input(start(first.elements, 1), '');
+  await first.window.fire('pagehide');
+  const reopened = setup({}, options);
+  const ui = reopened.elements;
+  await ui.bulkButton.fire('click');
+  assert.equal(ui.preview.hidden, false);
+  assert.equal(content(ui, 0).value, '门禁故障，待厂家回复');
+  assert.equal(content(ui, 1).value, '');
+  assert.equal(start(ui, 1).value, '');
+  assert.equal(ui.save.disabled, true);
+  await input(content(ui, 1), '检查录像');
+  assert.equal(ui.save.disabled, true);
+  await input(start(ui, 1), '10:00');
+  assert.equal(ui.save.disabled, false);
+  await ui.save.fire('click');
+  assert.deepEqual(reopened.saved().reports['2026-09-05'].entries.map(e => e.content),
+    ['门禁故障，待厂家回复', '检查录像']);
+});

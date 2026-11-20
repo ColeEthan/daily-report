@@ -38,6 +38,15 @@ test('recognizes numbered report headings with spaced colons without rewriting d
   ]);
   assert.equal(B.parse('1、检查 13-2-102 室门禁。').entries[0].content, '1、检查 13-2-102 室门禁。');
 });
+test('indented numbered work starts a separate untimed entry', () => {
+  for (const indent of ['  ', '\t', '　']) {
+    const result = B.inspectInput('1、08:00—09:00 巡查门禁\n  补充说明\n' + indent + '2、整理图纸');
+    assert.equal(result.mode, 'choose');
+    assert.deepEqual(result.parsed.entries.map(({ start, end, content }) => [start, end, content]), [
+      ['08:00', '09:00', '巡查门禁\n补充说明'], ['', '', '2、整理图纸']
+    ]);
+  }
+});
 test('invalid dates, multiple dates, invalid times and empty headings are never silently saved', () => {
   for (const input of ['日期：2026-02-30\n维修',source+'\n2026-11-03\n维修','25:00—26:00\n维修','12:00—08:00\n维修','8:99 维修','08:00—12:00','| 时间 | 内容 |']) assert.throws(() => B.parse(input));
   for (const input of ['1、8： 0 工作', '1、8： 00 - 11： 0 工作', '1、8： 00 - 11： 000 工作']) {
