@@ -31,3 +31,8 @@
 #aiApprovalDialog button { border: 0; border-radius: 8px; padding: 11px 14px; background: #edf2ee; color: #215f4e; font: inherit; cursor: pointer; }
 #aiApprovalDialog #aiApproveDevice { background: #186b53; color: white; }
 #aiApprovalDialog #aiRevokeDevice { background: #f8edeb; color: #983f31; }
+#bulkDialog #appendPanel { border-top: 1px solid #dfe7e3; margin-bottom: 16px; }
+#bulkDialog #appendPanel summary { color: #215f4e; font-weight: 600; cursor: pointer; padding: 12px 0; }
+#bulkDialog #appendSource { min-height: 72px; }
+#bulkDialog #appendPanel .bulk-actions { margin-top: 10px; }
+#bulkDialog #appendStatus:empty { display: none; }

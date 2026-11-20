@@ -334,7 +334,9 @@
     if (!dialog.open) dialog.showModal();
   }
   function showReport(date) {
-    if (recoveryMode || (writer.active && !saveForm())) return;
+    if (recoveryMode) return;
+    // A preview reads committed entries. A failed draft write must leave the form usable.
+    if (date === selectedDate && writer.active) saveForm();
     const report = state.reports[date];
     if (!report?.entries.length) return;
     const draft = captureDraft();
@@ -349,24 +351,7 @@
   }
   async function copyReport() {
     const text = $('previewText').textContent;
-    let copied = false;
-    try {
-      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-        await navigator.clipboard.writeText(text);
-        copied = true;
-      }
-    } catch { /* Fall through to the legacy API, then manual selection. */ }
-    if (!copied) {
-      const area = $('manualCopy');
-      area.value = text;
-      area.hidden = false;
-      area.focus();
-      area.select();
-      area.setSelectionRange(0, text.length);
-      try { copied = typeof document.execCommand === 'function' && document.execCommand('copy') === true; }
-      catch { copied = false; }
-      area.hidden = copied;
-    }
+    const copied = await C.copyReportText(text, $('manualCopy'), navigator, document);
     $('copyHint').textContent = copied ? '已复制，可以粘贴到微信等应用发送。' : '自动复制失败，请长按下方文字，选择全选并复制。';
     $('copyHint').hidden = false;
     $('copyButton').textContent = copied ? '再次复制' : '重试复制';
@@ -379,14 +364,17 @@
   function renderHistory() {
     const list = $('historyList');
     list.replaceChildren();
+    const query = $('historySearch').value.trim().toLowerCase();
     const dates = [...new Set([...Object.keys(state.reports), ...Object.keys(state.drafts)])]
       .filter(date => state.reports[date]?.entries.length || state.drafts[date]).sort().reverse();
-    if (!dates.length) { list.append(emptyMessage('暂无历史记录')); return; }
     dates.forEach(date => {
+      const entries = state.reports[date]?.entries || [];
+      const match = query && entries.find(entry => entry.content.toLowerCase().includes(query));
+      if (query && !match) return;
       const row = document.createElement('div');
       row.className = 'history-item';
       const label = document.createElement('span');
-      const count = state.reports[date]?.entries.length || 0;
+      const count = entries.length;
       const draft = state.drafts[date];
       const emptyDraft = draft && C.isEmptyDraft(draft);
       label.textContent = `${date}（${count} 条${emptyDraft ? '，已清空开始时间' : draft ? '，有草稿' : ''}）`;
@@ -401,8 +389,18 @@
         if (selectedDate === date) $('historyDialog').close();
       }), remove);
       row.append(label, actions);
+      if (match) {
+        const offset = match.content.toLowerCase().indexOf(query);
+        const start = Math.max(0, offset - 18);
+        const end = offset + query.length + 30;
+        const snippet = document.createElement('p');
+        snippet.className = 'history-match';
+        snippet.textContent = (start ? '…' : '') + match.content.slice(start, end) + (end < match.content.length ? '…' : '');
+        row.append(snippet);
+      }
       list.append(row);
     });
+    if (!list.children.length) list.append(emptyMessage(query ? '没有找到包含该关键词的工作记录' : '暂无历史记录'));
   }
   function deleteHistory(date) {
     if (recoveryMode || !writer.active) return;
@@ -587,6 +585,7 @@
   $('generateButton').addEventListener('click', () => showReport(selectedDate));
   $('copyButton').addEventListener('click', copyReport);
   $('historyButton').addEventListener('click', showHistory);
+  $('historySearch').addEventListener('input', renderHistory);
   $('backupButton').addEventListener('click', showBackup);
   $('exportButton').addEventListener('click', exportAll);
   $('importFile').addEventListener('change', previewImport);

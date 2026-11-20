@@ -219,6 +219,28 @@
     });
     return `${displayDate(date)}\n${title}\n${lines.join('\n')}\n`;
   }
+  async function copyReportText(text, area, nav, doc, isCurrent = () => true) {
+    try {
+      if (typeof nav.clipboard?.writeText === 'function') {
+        await nav.clipboard.writeText(text);
+        if (isCurrent()) area.hidden = true;
+        return true;
+      }
+    } catch { /* Continue with selection-based copying. */ }
+    if (!isCurrent()) return false;
+    area.value = text;
+    area.hidden = false;
+    try {
+      area.focus();
+      area.select();
+      area.setSelectionRange(0, text.length);
+      if (doc.execCommand?.('copy') === true) {
+        area.hidden = true;
+        return true;
+      }
+    } catch { /* Leave the report visible so the user can copy it manually. */ }
+    return false;
+  }
   function exportBackup(state) {
     return JSON.stringify({ format: 'daily-report-backup', version: 2, exportedAt: new Date().toISOString(), data: validateState(state) }, null, 2);
   }
@@ -284,5 +306,5 @@
     if (!state.preferredName) state.preferredName = incoming.preferredName;
     return { state: validateState(state), stats };
   }
-  return { STORAGE_KEY, LEGACY_KEY, NAME_KEY, clone, validDate, today, displayDate, id, emptyState, validateRange, shiftLinkedTimes, entryTime, isEmptyDraft, validateState, migrateLegacy, load, createWriter, save, makeEntry, buildReport, exportBackup, parseBackup, mergeBackup };
+  return { STORAGE_KEY, LEGACY_KEY, NAME_KEY, clone, validDate, today, displayDate, id, emptyState, validateRange, shiftLinkedTimes, entryTime, isEmptyDraft, validateState, migrateLegacy, load, createWriter, save, makeEntry, buildReport, copyReportText, exportBackup, parseBackup, mergeBackup };
 });

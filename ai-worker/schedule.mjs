@@ -22,28 +22,46 @@ function toClock(minutes) {
   return pad(Math.floor(minutes / 60)) + ':' + pad(minutes % 60);
 }
 
-function mentionedStartBounds(note) {
+function sourceClauses(note) {
+  return note.normalize('NFKC').split(/[,、。;!?\r\n]+/);
+}
+
+function compact(text) {
+  return text.normalize('NFKC').replace(/[^\p{L}\p{N}]/gu, '');
+}
+
+function matchDescription(tasks, description) {
+  const context = compact(description);
+  const pairs = new Set();
+  for (let i = 0; i < context.length - 1; i++) pairs.add(context.slice(i, i + 2));
+  const ranked = tasks.map(item => {
+    const content = compact(item.content);
+    let score = [...pairs].filter(pair => content.includes(pair)).length;
+    if (content.length >= 2 && context.includes(content)) score = Math.max(2, score);
+    return { item, score };
+  }).sort((a, b) => b.score - a.score);
+  const best = ranked[0];
+  return best?.score >= 2 && best.score > (ranked[1]?.score || 0) ? best.item : null;
+}
+
+function keepBoundsOpen(work, note) {
   const pattern = /(?:(上午|下午|晚上|傍晚)\s*)?(?:(\d{1,2})[:：]([0-5]\d)|(\d{1,2}|[一二两三四五六七八九十]{1,2})点\s*(半)?)(?:\s*(?:以后|之后|后))/g;
   const spokenHours = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十', '十一', '十二'];
-  const bounds = [];
-  for (const [, part, hours, minutes, spoken, half] of note.matchAll(pattern)) {
+  for (const clause of sourceClauses(note)) {
+    const matches = [...clause.matchAll(pattern)];
+    if (matches.length !== 1) continue;
+    const [mention, part, hours, minutes, spoken, half] = matches[0];
+    const item = matchDescription(work, clause.replace(mention, ''));
+    if (!item?.start || item.end) continue;
     let hour = Number(hours ?? spoken);
     if (Number.isNaN(hour)) hour = spoken === '两' ? 2 : spokenHours.indexOf(spoken);
     if (hour < 0 || hour > 23) continue;
     if (part && part !== '上午' && hour > 0 && hour < 12) hour += 12;
-    bounds.push(hour * 60 + (minutes ? Number(minutes) : half ? 30 : 0));
-  }
-  return new Set(bounds);
-}
-
-function keepBoundsOpen(work, note) {
-  for (const bound of mentionedStartBounds(note)) {
-    const matches = work.filter(item => item.start && toMinutes(item.start) === bound);
-    // Restore the original meaning when the model turns an "after" constraint
-    // into a start-only entry. Leave explicit ranges and ambiguous matches alone.
-    if (matches.length !== 1 || matches[0].end) continue;
-    matches[0].start = '';
-    matches[0].notBefore = Math.max(matches[0].notBefore, bound);
+    const bound = hour * 60 + (minutes ? Number(minutes) : half ? 30 : 0);
+    if (toMinutes(item.start) === bound) {
+      item.start = '';
+      item.notBefore = Math.max(item.notBefore, bound);
+    }
   }
 }
 
@@ -56,7 +74,6 @@ function modelClock(value) {
 
 function restoreSourceRanges(work, note) {
   const rangePattern = /(?<![\d:])(?:(上午|下午|傍晚|晚上)[ \t]*)?(\d{1,2}[ \t]*:[ \t]*\d{2})[ \t]*[-—–~至到][ \t]*(?:(次日)[ \t]*)?(\d{1,2}[ \t]*:[ \t]*\d{2})(?![\d:])/g;
-  const compact = text => text.replace(/[^\p{L}\p{N}]/gu, '');
   const readClock = (text, afternoon) => {
     const clock = modelClock(text.replace(/[ \t]+/g, ''));
     if (!clock) return null;
@@ -64,14 +81,14 @@ function restoreSourceRanges(work, note) {
     return afternoon && minutes < 720 ? toClock(minutes + 720) : clock;
   };
   const ranges = [];
-  for (const clause of note.normalize('NFKC').split(/[,。;!?\r\n]+/)) {
+  for (const clause of sourceClauses(note)) {
     const matches = [...clause.matchAll(rangePattern)];
     for (const [match, period, from, overnight, until] of matches) {
       const afternoon = !!period && period !== '上午';
       const start = readClock(from, afternoon);
       const end = readClock(until, afternoon && !overnight);
       if (!start || !end || (!overnight && end <= start)) continue;
-      const context = matches.length === 1 ? compact(clause.replace(match, '')) : '';
+      const context = matches.length === 1 ? clause.replace(match, '') : '';
       ranges.push({ start, end, nextDay: !!overnight, context });
     }
   }
@@ -85,17 +102,7 @@ function restoreSourceRanges(work, note) {
       !ranges.some(other => other !== range && exact(item, other) && !exact(item, range)));
     const exactMatches = candidates.filter(item => exact(item, range));
     const matchingClocks = candidates.filter(item => item.start === range.start || item.end === range.end);
-    const pairs = new Set();
-    for (let i = 0; i < range.context.length - 1; i++) pairs.add(range.context.slice(i, i + 2));
-    // Check the description independently of the model's clock assignments.
-    const ranked = tasks.map(item => {
-      const content = compact(item.content.normalize('NFKC'));
-      let score = [...pairs].filter(pair => content.includes(pair)).length;
-      if (content.length >= 2 && range.context.includes(content)) score = Math.max(2, score);
-      return { item, score };
-    }).sort((a, b) => b.score - a.score);
-    const best = ranked[0];
-    const textMatch = best?.score >= 2 && best.score > (ranked[1]?.score || 0) ? best.item : null;
+    const textMatch = matchDescription(tasks, range.context);
     if (textMatch && exactMatches.length && !exactMatches.includes(textMatch)) {
       conflicts.add(textMatch);
       for (const item of exactMatches) conflicts.add(item);

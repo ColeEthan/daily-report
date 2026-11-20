@@ -201,6 +201,18 @@ test('keeps a start-only meeting open and recovers a spoken lower bound mislabel
   ]);
 });
 
+test('a lower bound and a fixed meeting at the same clock stay with their own tasks', async () => {
+  const { scheduleReport } = await import('../ai-worker/schedule.mjs');
+  for (const task of [
+    { ...item('整理资料', 'afternoon'), notBefore: '14:30' },
+    item('整理资料', 'afternoon', '14:30')
+  ]) {
+    const result = scheduleReport([task, item('开会', 'afternoon', '14:30')],
+      '14:30以后整理资料，14:30开始开会');
+    assert.deepEqual(result.entries.map(({ start, end }) => [start, end]), [['', ''], ['14:30', '']]);
+  }
+});
+
 test('reconciles a stated time range in mixed prose before estimating other work', async () => {
   const { scheduleReport } = await import('../ai-worker/schedule.mjs');
   const mixed = '上午修门禁，下午 14： 30–16：00 去锦园看电梯';
@@ -235,6 +247,21 @@ test('swapped source times flag the affected preview rows, including after reloa
     assert.deepEqual(ui.rows.children.map(row => row.children[0].children.some(
       node => node.textContent === '请核对本条时间')), [true, true, false]);
   }
+});
+
+test('enumeration commas keep each source time range attached to its description', async () => {
+  const { scheduleReport } = await import('../ai-worker/schedule.mjs');
+  const note = '检修门禁08:00-09:00、备份录像10:00-11:00、整理资料13:30-14:30';
+  const third = item('整理资料', 'afternoon', '13:30', '14:30');
+  const swapped = scheduleReport([
+    item('检修门禁', 'morning', '10:00', '11:00'), item('备份录像', 'morning', '08:00', '09:00'), third
+  ], note);
+  assert.equal(swapped.needsTimeReview, true);
+  assert.deepEqual(swapped.entries.map(entry => !!entry.needsTimeReview), [true, true, false]);
+  const correct = scheduleReport([
+    item('检修门禁', 'morning', '08:00', '09:00'), item('备份录像', 'morning', '10:00', '11:00'), third
+  ], note);
+  assert.equal(correct.needsTimeReview, false);
 });
 
 test('the same input previews complete reports locally and asks before processing untimed items', async () => {

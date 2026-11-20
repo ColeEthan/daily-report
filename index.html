@@ -9,12 +9,12 @@
 <meta name="description" content="随手记录每日工作，编辑补录、自动保存草稿，一键生成日报与备份。">
 <title>工作日报</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%93%8B%3C/text%3E%3C/svg%3E">
-<script src="core.js?v=20261119-report-time-space" defer></script>
-<script src="bulk-core.js?v=20261120-preview" defer></script>
-<script src="app.js?v=20261119-time-link" defer></script>
+<script src="core.js?v=20261120-history-search" defer></script>
+<script src="bulk-core.js?v=20261120-history-search" defer></script>
+<script src="app.js?v=20261120-history-search" defer></script>
 <script src="ai-approvals.js?v=20261119" defer></script>
-<script src="bulk.js?v=20261120-preview" defer></script>
-<link rel="stylesheet" href="bulk-embedded.css?v=20261119-ai-intake">
+<script src="bulk.js?v=20261120-history-search" defer></script>
+<link rel="stylesheet" href="bulk-embedded.css?v=20261120-history-search">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -334,6 +334,8 @@
   #previewText { background: #f5f5f7; padding: 14px; border-radius: 10px; font-size: 16px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; font-family: inherit; }
   #manualCopy { width: 100%; min-height: 180px; margin-top: 12px; padding: 12px; font-size: 16px; }
   .history-item { gap: 12px; flex-wrap: wrap; font-size: 16px; }
+  #historySearch { display: block; width: 100%; margin: 6px 0 16px; padding: 10px; font: inherit; border: 1px solid #b1b1b8; border-radius: 8px; }
+  .history-match { flex-basis: 100%; color: #48484a; line-height: 1.5; overflow-wrap: anywhere; }
   .history-item .actions { flex-wrap: wrap; }
   .history-item .actions button { font-size: 14px; min-width: 44px; }
   .backup-description, #importSummary { line-height: 1.7; }
@@ -407,7 +409,9 @@
   </div>
 </dialog>
 <dialog id="historyDialog" aria-labelledby="historyTitle">
-  <div class="dialog-content"><h3 id="historyTitle">📅 历史记录</h3>
+  <div class="dialog-content"><h3 id="historyTitle" tabindex="-1" autofocus>📅 历史记录</h3>
+    <label for="historySearch">搜索已保存的工作内容</label>
+    <input id="historySearch" type="search" placeholder="输入园区、设备或工作关键词" autocomplete="off">
     <div id="historyList"></div>
     <button type="button" class="btn-hclose" data-close="historyDialog">关闭</button>
   </div>
@@ -460,7 +464,29 @@
   <button id="aiManageApprovals" type="button" class="ai-manage-open">管理授权</button>
   </div>
 </section>
-<section id="preview" hidden><h2>检查记录</h2><div class="fields"><label>日期<input id="date" type="date"></label><label>姓名<input id="name" maxlength="100" placeholder="可不填"></label></div><p id="summary"></p><p id="aiEstimate" class="hint" hidden>部分时间是自动估排，请核对后保存。</p><p id="aiTimeReview" class="hint" hidden>部分时间需要核对，可在对应条目中修改。</p><div id="rows"></div><div id="warnings" class="notice" hidden></div><label id="confirmWrap" class="check" hidden><input id="confirm" type="checkbox">我已查看上述提示，仍要追加这些记录</label><button id="save">保存到当天</button><p id="saveResult" role="status" aria-live="polite"></p><p class="hint">记录将追加到所选日期，完全重复的内容会跳过。原有日报和填写草稿会保留。</p></section>
+<section id="preview" hidden>
+  <h2>检查记录</h2>
+  <div class="fields"><label>日期<input id="date" type="date"></label><label>姓名<input id="name" maxlength="100" placeholder="可不填"></label></div><p id="summary"></p><p id="aiEstimate" class="hint" hidden>部分时间是自动估排，请核对后保存。</p><p id="aiTimeReview" class="hint" hidden>部分时间需要核对，可在对应条目中修改。</p>
+  <div id="rows"></div>
+  <details id="appendPanel">
+    <summary>再补一条<span id="appendPendingMark" hidden>（尚未追加）</span></summary>
+    <label for="appendSource">补充内容</label>
+    <textarea id="appendSource" rows="2" maxlength="100000" placeholder="例如：下午去锦园看电梯"></textarea>
+    <div class="bulk-actions">
+      <button type="button" id="appendSubmit">追加到预览</button>
+      <button type="button" id="appendLocal" class="secondary" hidden>按原文追加</button>
+    </div>
+    <p id="appendStatus" role="status" aria-live="polite"></p>
+  </details>
+  <div id="warnings" class="notice" hidden></div><label id="confirmWrap" class="check" hidden><input id="confirm" type="checkbox">我已查看上述提示，仍要追加这些记录</label>
+  <div class="bulk-actions">
+    <button type="button" id="saveCopy">保存并复制汇报</button>
+    <button type="button" id="save" class="secondary">保存到当天</button>
+  </div>
+  <p id="saveResult" role="status" aria-live="polite"></p>
+  <textarea id="bulkManualCopy" readonly hidden rows="7" aria-label="手动复制当天完整汇报"></textarea>
+  <p class="hint">记录追加到所选日期，完全重复的条目会跳过。复制时包含当天已保存的全部记录。</p>
+</section>
 <button type="button" class="bulk-finish" data-close="bulkDialog">完成，返回日报</button></div></dialog>
 <dialog id="aiApprovalDialog" aria-labelledby="aiApprovalTitle">
   <div class="dialog-content">

@@ -118,6 +118,37 @@
     if (a.legacyTime || b.legacyTime || !a.start || !a.end || !b.start || !b.end) return false;
     return minutes(a.start) < minutes(b.end) + (b.nextDay ? 1440 : 0) && minutes(b.start) < minutes(a.end) + (a.nextDay ? 1440 : 0);
   }
+  function planAppend(existing, incoming, note, estimated) {
+    const occupied = existing.slice();
+    const seen = new Set(existing.map(key));
+    const added = [];
+    let skipped = 0, cleared = 0;
+    // The current AI response marks estimates for the whole batch. When the
+    // note includes clock times, retain these values for the user to review.
+    const mentionsClock = /[\d一二两三四五六七八九十百零〇]\s*(?:[:点时時]|分[钟鐘]|[-—–~至到]\s*[\d一二两三四五六七八九十])|(?:早|上午|中午|下午|晚)\s*[\d一二两三四五六七八九十]/.test(note.normalize('NFKC'));
+    for (const entry of incoming) {
+      let item = entry;
+      if (seen.has(key(entry))) { skipped++; continue; }
+      if (estimated && !mentionsClock && entry.start && entry.end && occupied.some(other => {
+        if (!other.start && leaveLine.test(other.content.trim())) {
+          if (/^上午/.test(other.content.trim())) return entry.start < '12:00';
+          if (/^下午/.test(other.content.trim())) return entry.end > '13:30';
+          return true;
+        }
+        // A start without an end leaves the remainder of the day uncertain.
+        return overlaps(entry, other.start && !other.end ? { ...other, end: '00:00', nextDay: true } : other);
+      })) {
+        item = { ...entry, start: '', end: '', nextDay: false, needsTimeReview: true };
+      }
+      if (seen.has(key(item))) { skipped++; continue; }
+      if (item !== entry) cleared++;
+      seen.add(key(entry));
+      seen.add(key(item));
+      occupied.push(item);
+      added.push(item);
+    }
+    return { added, skipped, cleared };
+  }
   function prepare(state, date, name, entries) {
     if (!C.validDate(date)) throw new Error('请选择有效日期');
     if (typeof name !== 'string' || name.trim().length > 100) throw new Error('姓名最多 100 字');
@@ -148,5 +179,5 @@
     }
     return { state: C.validateState(next), added, skipped, warnings, statuses, existing: existing ? existing.entries.length - added : 0 };
   }
-  return { parse, prepare, inspectInput };
+  return { parse, prepare, inspectInput, planAppend };
 });

@@ -2,17 +2,22 @@
   'use strict';
   const C = DailyReport, B = DailyReportBulk, $ = id => document.getElementById(id);
   const sourceInput = $('source');
+  const appendInput = $('appendSource');
   const host = window.DailyReportBulkHost;
   const writer = host ? host.writer : C.createWriter(navigator.locks), draftKey = 'daily_report_bulk_draft_v1';
   let state = C.emptyState(), raw = null, healthy = false, entries = [], previewRaw = null, plan = null;
   let dirty = false;
   let previewRevision = 0;
+  let generateAppend = null;
+  let appendDate = '';
+  function hasPendingAppend() { return !!appendInput.value.trim(); }
+  let copyAttempt = 0;
   function message(text) { $('message').textContent = text; }
   function saveMessage(text) { message(text); $('saveResult').textContent = text; }
   function stash() {
     dirty = true;
     try { sessionStorage.setItem(draftKey, JSON.stringify({
-      source: sourceInput.value, date: $('date').value, name: $('name').value, entries,
+      source: sourceInput.value, appendSource: appendInput.value, appendDate, date: $('date').value, name: $('name').value, entries,
       preview: !$('preview').hidden, estimated: $('aiEstimate')?.hidden === false,
       needsTimeReview: $('aiTimeReview')?.hidden === false
     })); }
@@ -29,9 +34,13 @@
     previewRevision++;
     plan = null;
     $('saveResult').textContent = '';
+    $('bulkManualCopy').hidden = true;
     $('confirm').checked = false;
     try {
-      if (!$('preview').hidden) {
+      if (showingSavedDay()) {
+        $('summary').textContent = `当天已保存 ${state.reports[$('date').value].entries.length} 条。可以继续补充，或返回日报修改已保存的记录。`;
+        $('warnings').hidden = $('confirmWrap').hidden = true;
+      } else if (!$('preview').hidden) {
         plan = B.prepare(state, $('date').value, $('name').value, entries);
         $('summary').textContent = `当天已有 ${plan.existing} 条；本次新增 ${plan.added} 条，跳过重复 ${plan.skipped} 条。`;
         $('warnings').textContent = plan.warnings.join('\n');
@@ -44,8 +53,19 @@
     }
     enableSave();
   }
+  function showingSavedDay() {
+    return !entries.length && !$('preview').hidden && !!state.reports[$('date').value]?.entries.length;
+  }
   function enableSave() {
-    $('save').disabled = !healthy || !writer.active || !plan || !plan.added || previewRaw !== raw || (plan.warnings.length > 0 && !$('confirm').checked);
+    const pending = hasPendingAppend();
+    $('appendPendingMark').hidden = !pending;
+    const ready = healthy && writer.active && previewRaw === raw && !pending &&
+      (!plan?.warnings.length || $('confirm').checked);
+    const copyOnly = showingSavedDay() || (plan && !plan.added && plan.skipped > 0);
+    $('save').disabled = !ready || !plan?.added;
+    $('saveCopy').disabled = !ready || (!plan?.added && !copyOnly);
+    $('saveCopy').textContent = copyOnly ? '复制当天完整汇报' : '保存并复制汇报';
+    if (pending) $('bulkManualCopy').hidden = true;
   }
   function node(tag, text, className) {
     const item = document.createElement(tag);
@@ -108,6 +128,12 @@
       sourceInput.value = cached.source;
       if (C.validDate(cached.date)) $('date').value = cached.date;
       if (typeof cached.name === 'string') $('name').value = cached.name;
+      if (typeof cached.appendSource === 'string' && cached.appendSource) {
+        appendInput.value = cached.appendSource;
+        appendDate = C.validDate(cached.appendDate) ? cached.appendDate : $('date').value;
+        $('appendPanel').open = true;
+        if (!cached.preview) message('补充内容已暂存，重新预览后可继续追加。');
+      }
       if (cached.preview && Array.isArray(cached.entries)) {
         // Draft rows can be incomplete. prepare() validates them before saving.
         entries = cached.entries.map(({ start, end, nextDay, content, needsTimeReview }) => {
@@ -123,7 +149,7 @@
         if (timeReview) timeReview.hidden = cached.needsTimeReview !== true;
         $('preview').hidden = false; renderRows();
       }
-      dirty = !!cached.source || !!entries.length;
+      dirty = !!cached.source || !!entries.length || hasPendingAppend();
     }
   } catch { message('上次的预览无法恢复，请重新粘贴识别。'); }
   function acquire() {
@@ -145,7 +171,10 @@
     const previousRaw = raw;
     load();
     if (previewRaw === null && $('preview').hidden) previewRaw = raw;
-    if (previousRaw !== raw) previewRaw = undefined;
+    if (previousRaw !== raw) {
+      previewRaw = showingSavedDay() && !hasPendingAppend() ? raw : undefined;
+      if (showingSavedDay()) $('name').value = state.reports[$('date').value].name;
+    }
     if (healthy) $('lockStatus').textContent = writer.active
       ? ''
       : '当前页面为只读。请关闭其他日报页面，再刷新本页；当前输入会暂存。';
@@ -155,10 +184,19 @@
   }
   if (host) host.subscribe(refreshHost);
   $('retry').addEventListener('click', acquire);
+  appendInput.addEventListener('input', () => {
+    appendDate = hasPendingAppend() ? appendDate || $('date').value : '';
+    $('appendStatus').textContent = '';
+    $('appendLocal').hidden = true;
+    enableSave(); stash();
+  });
   sourceInput.addEventListener('input', () => {
     previewRevision++;
+    $('appendPanel').open = hasPendingAppend();
+    $('appendStatus').textContent = '';
+    $('appendLocal').hidden = true;
     entries = []; plan = null; $('preview').hidden = true;
-    message(''); stash(); enableSave();
+    message(hasPendingAppend() ? '补充内容已暂存，重新预览后可继续追加。' : ''); stash(); enableSave();
   });
   function showPreview(parsed) {
     load();
@@ -173,7 +211,64 @@
     if (timeReview) timeReview.hidden = !parsed.needsTimeReview;
     renderRows(); update(); stash();
   }
+  function appendPreview(parsed, note) {
+    const date = $('date').value;
+    if (parsed.date && parsed.date !== date) throw new Error('补充内容的日期与当前预览不同，请核对日期再追加。');
+    const selectedName = $('name').value.trim();
+    if (parsed.name) {
+      const conflict = [state.reports[date]?.name, selectedName].find(name => name && name !== parsed.name);
+      if (conflict) throw new Error(`补充内容的姓名“${parsed.name}”与当前日报姓名“${conflict}”不同，请核对后再追加。`);
+    }
+    const existing = (state.reports[date]?.entries || []).concat(entries);
+    const result = B.planAppend(existing, parsed.entries, note, parsed.estimated);
+    if (!selectedName && parsed.name) $('name').value = parsed.name;
+    const firstNew = entries.length;
+    entries.push(...result.added);
+    if (result.added.length) {
+      if (parsed.estimated && $('aiEstimate')) $('aiEstimate').hidden = false;
+      if ((result.cleared || parsed.needsTimeReview) && $('aiTimeReview')) $('aiTimeReview').hidden = false;
+    }
+    appendInput.value = '';
+    appendDate = '';
+    $('appendLocal').hidden = true;
+    renderRows(); update(); stash();
+    let text = `已追加 ${result.added.length} 条到预览。`;
+    if (result.skipped) text += `已跳过 ${result.skipped} 条完全重复的记录。`;
+    if (result.cleared) text += `其中 ${result.cleared} 条估排时间已被占用，已留空，请填写。`;
+    $('appendStatus').textContent = text;
+    $('rows').children[firstNew]?.scrollIntoView?.({ block: 'nearest' });
+  }
+  function submitAppend(useAi) {
+    const note = appendInput.value.trim();
+    if (!note) {
+      $('appendStatus').textContent = '请填写要补充的工作。';
+      appendInput.focus?.();
+      return;
+    }
+    try {
+      if ($('preview').hidden) throw new Error('请先预览当天的记录。');
+      if (!C.validDate($('date').value)) throw new Error('请先在预览中选择日期。');
+      const decision = B.inspectInput(note);
+      if (decision.error) throw decision.error;
+      if (appendDate && appendDate !== $('date').value &&
+          !confirm(`补充内容原属 ${appendDate}，确定追加至 ${$('date').value} 吗？`)) return;
+      if (useAi && generateAppend && decision.mode === 'ai') return generateAppend();
+      appendPreview(decision.parsed || B.parse(note), note);
+    } catch (error) {
+      $('appendStatus').textContent = error.message;
+    }
+  }
+  $('appendSubmit').addEventListener('click', () => submitAppend(true));
+  $('appendLocal').addEventListener('click', () => submitAppend(false));
+  function checkPendingAppend() {
+    if ($('preview').hidden || !hasPendingAppend()) return false;
+    $('appendPanel').open = true;
+    $('appendStatus').textContent = '请先追加这段补充内容，或清空补充框，再重新生成。';
+    appendInput.focus?.();
+    return true;
+  }
   function parseSource(decision) {
+    if (checkPendingAppend()) return;
     try {
       if (decision?.error) throw decision.error;
       const parsed = decision?.parsed || B.parse(sourceInput.value);
@@ -211,6 +306,7 @@
     const status = $('aiStatus');
     let choice = null;
     let active = null;
+    let activeAppend = false;
     function showChoices(decision = null) {
       choice = decision;
       intake.hidden = !!choice;
@@ -221,8 +317,18 @@
       if (!active) return;
       active.abort();
       active = null;
-      intake.disabled = generate.disabled = false;
+      if (activeAppend && hasPendingAppend()) $('appendStatus').textContent = '补充内容已保留，可以继续追加。';
+      activeAppend = false;
+      $('appendSubmit').disabled = intake.disabled = generate.disabled = false;
     }
+    generateAppend = () => generateReport(null, true);
+    appendInput.addEventListener('input', () => {
+      if (active) {
+        stopActive();
+        status.textContent = '';
+        $('appendStatus').textContent = '';
+      }
+    });
     showChoices();
     sourceInput.addEventListener('input', () => {
       stopActive();
@@ -299,28 +405,32 @@
     });
     $('bulkDialog').addEventListener('close', stopActive);
     generate.addEventListener('click', () => generateReport(choice?.parsed));
-    async function generateReport(parsed) {
+    async function generateReport(parsed, appending = false) {
       if (active) return;
-      const note = sourceInput.value.trim();
+      if (!appending && checkPendingAppend()) return;
+      const input = appending ? appendInput : sourceInput;
+      const feedback = appending ? $('appendStatus') : status;
+      const localButton = appending ? $('appendLocal') : parse;
+      const note = input.value.trim();
       const entered = accessInput.value.trim();
       const token = entered || readDevice();
       if (!note) {
-        status.textContent = '请先填写工作内容。';
-        sourceInput.focus();
+        feedback.textContent = '请先填写工作内容。';
+        input.focus();
         return;
       }
       if (note.length > 1800) {
-        status.textContent = 'AI 一次最多整理 1800 字。可以缩短后再试，或按原文录入。';
-        parse.hidden = false;
+        feedback.textContent = 'AI 一次最多整理 1800 字。可以缩短后再试，或按原文录入。';
+        localButton.hidden = false;
         return;
       }
       if (!token) {
-        parse.hidden = false;
+        localButton.hidden = false;
         if (approvals?.hasPending()) {
-          status.textContent = 'AI 权限还在等待审批，请稍后查询。';
+          feedback.textContent = 'AI 权限还在等待审批，请稍后查询。';
           return;
         }
-        status.textContent = '请输入 AI 访问口令。';
+        feedback.textContent = '请输入 AI 访问口令，或按原文录入。';
         $('aiAccess').open = true;
         accessInput.focus();
         return;
@@ -330,10 +440,12 @@
       const revision = previewRevision;
       const controller = new AbortController();
       active = controller;
+      activeAppend = appending;
       const timer = setTimeout(() => controller.abort(), 30000);
-      intake.disabled = generate.disabled = true;
+      $('appendSubmit').disabled = intake.disabled = generate.disabled = true;
+      if (appending) localButton.hidden = true;
       message('');
-      status.textContent = '正在生成日报…';
+      feedback.textContent = appending ? '正在整理补充内容…' : '正在生成日报…';
       let failure = 'AI 暂时无法连接，简述已保留，请重试。';
       try {
         const response = await fetch(endpoint, {
@@ -392,14 +504,17 @@
           needsTimeReview: entry.needsTimeReview === true
         }));
         if (controller.signal.aborted) throw new Error('Generation timed out');
-        if (note !== sourceInput.value.trim() || revision !== previewRevision) return;
-        showPreview({
-          date: C.validDate(requestedDate) ? requestedDate : C.today(),
-          name: parsed?.name,
+        if (active !== controller || note !== input.value.trim() || revision !== previewRevision) return;
+        const newRows = {
           entries: generated,
           estimated: result.estimated === true,
           needsTimeReview: result.needsTimeReview === true
-        });
+        };
+        if (appending) {
+          appendPreview(newRows, note);
+        } else {
+          showPreview({ ...newRows, date: C.validDate(requestedDate) ? requestedDate : C.today(), name: parsed?.name });
+        }
         $('aiAccess').open = false;
         let rememberMessage = '';
         if (rememberRequested) {
@@ -412,19 +527,25 @@
             rememberMessage = '本次未能记住设备。';
           }
         }
-        status.textContent = `${rememberMessage}已生成 ${generated.length} 条，确认后保存。`;
-        message('');
-        $('preview').scrollIntoView({ block: 'start' });
+        if (!appending) {
+          status.textContent = `${rememberMessage}已生成 ${generated.length} 条，确认后保存。`;
+          message('');
+          $('preview').scrollIntoView({ block: 'start' });
+        }
       } catch {
         if (active === controller && revision === previewRevision) {
-          status.textContent = controller.signal.aborted ? '生成超时，输入已保留，请重试。' : failure;
-          parse.hidden = false;
+          feedback.textContent = controller.signal.aborted ? '生成超时，输入已保留，请重试。' : failure;
+          localButton.hidden = false;
         }
       } finally {
         clearTimeout(timer);
         if (active === controller) {
+          if (appending && hasPendingAppend() && revision !== previewRevision) {
+            feedback.textContent = '预览已修改，补充内容已保留，请重新追加。';
+          }
           active = null;
-          intake.disabled = generate.disabled = false;
+          activeAppend = false;
+          $('appendSubmit').disabled = intake.disabled = generate.disabled = false;
         }
       }
     }
@@ -432,30 +553,67 @@
   $('date').addEventListener('change', () => { update(); stash(); });
   $('name').addEventListener('input', () => { update(); stash(); });
   $('confirm').addEventListener('change', enableSave);
-  $('save').addEventListener('click', () => {
-    if ($('save').disabled) return;
+  async function copySavedReport(date) {
+    const revision = previewRevision;
+    const attempt = ++copyAttempt;
+    const isCurrent = () => attempt === copyAttempt && revision === previewRevision && !hasPendingAppend() &&
+      (!host || $('bulkDialog').open);
+    const text = C.buildReport(date, state.reports[date]);
+    const copied = await C.copyReportText(text, $('bulkManualCopy'), navigator, document, isCurrent);
+    if (isCurrent()) {
+      const message = copied ? '已复制当天完整汇报。' : '自动复制失败，请重试复制或长按下方文字手动复制。';
+      saveMessage(`${C.displayDate(date)}的记录已保存。${message}`);
+    }
+  }
+  function finishPreview(withCopy) {
+    if ($(withCopy ? 'saveCopy' : 'save').disabled || hasPendingAppend()) return;
+    const date = $('date').value;
     try {
       if (!healthy || !writer.active) throw new Error('尚未取得保存权限，请重新连接保存');
       if (previewRaw !== raw || localStorage.getItem(C.STORAGE_KEY) !== previewRaw) throw new Error('日报数据已有变化，请重新预览后保存。当前输入仍保留。');
-      const checked = B.prepare(state, $('date').value, $('name').value, entries);
-      if (!checked.added || (checked.warnings.length && !$('confirm').checked)) return;
-      raw = host ? host.save(checked.state, previewRaw, $('date').value) : C.save(localStorage, checked.state, previewRaw, writer);
-      state = checked.state; previewRaw = raw;
-      dirty = false;
-      try { sessionStorage.removeItem(draftKey); } catch { /* Data is already committed. */ }
-      update();
-      saveMessage(`已保存到 ${$('date').value}：新增 ${checked.added} 条，跳过重复 ${checked.skipped} 条。可返回原日报查看。`);
+      if (!showingSavedDay()) {
+        const checked = B.prepare(state, date, $('name').value, entries);
+        if (checked.warnings.length && !$('confirm').checked) return;
+        if (checked.added) {
+          raw = host ? host.save(checked.state, previewRaw, date) : C.save(localStorage, checked.state, previewRaw, writer);
+          state = checked.state;
+          previewRaw = raw;
+        } else if (!withCopy || !checked.skipped) {
+          return;
+        }
+        $('name').value = state.reports[date].name;
+        entries = [];
+        renderRows();
+        $('appendStatus').textContent = '';
+        for (const id of ['aiEstimate', 'aiTimeReview']) {
+          if ($(id)) $(id).hidden = true;
+        }
+        dirty = false;
+        try { sessionStorage.removeItem(draftKey); } catch { /* Records are already saved. */ }
+        update();
+        saveMessage(`已保存到 ${date}，新增 ${checked.added} 条，跳过重复 ${checked.skipped} 条。`);
+      }
     } catch (error) {
       saveMessage(error.name === 'QuotaExceededError' ? '保存空间不足，尚未写入。当前文字和预览仍保留，请先到原日报导出备份并清理空间。' : `保存失败：${error.message}`);
-      stash();
+      if (entries.length) stash();
+      return;
     }
-  });
+    if (withCopy) return copySavedReport(date);
+  }
+  $('save').addEventListener('click', () => finishPreview(false));
+  $('saveCopy').addEventListener('click', () => finishPreview(true));
   window.addEventListener('storage', event => {
     if (event.key !== C.STORAGE_KEY && event.key !== null) return;
     load();
-    $('lockStatus').textContent = '日报数据已变化，请重新识别预览后再保存。';
-    // Keep edited rows visible, but never authorize a stale preview.
-    previewRaw = undefined; update();
+    if (showingSavedDay() && !hasPendingAppend()) {
+      previewRaw = raw;
+      $('name').value = state.reports[$('date').value].name;
+    } else {
+      $('lockStatus').textContent = '日报数据已变化，请重新识别预览后再保存。';
+      // Keep edited rows visible, but never authorize a stale preview.
+      previewRaw = undefined;
+    }
+    update();
   });
   window.addEventListener('beforeunload', event => { if (dirty) { event.preventDefault(); event.returnValue = ''; } });
   window.addEventListener('pagehide', () => { if (!host) writer.release(); enableSave(); });

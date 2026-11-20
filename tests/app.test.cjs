@@ -249,6 +249,24 @@ test('quota failure preserves typed text and previous stored report', async () =
   assert.equal(app.values.get(C.STORAGE_KEY), before);
   assert.match(app.elements.notice.textContent, /保存空间不足/);
 });
+test('a failed draft write leaves earlier saved reports available to view and copy', async () => {
+  const app = setup();
+  const ui = app.elements;
+  await add(app, '昨日检修门禁');
+  ui.reportDate.value = '2026-09-06';
+  await ui.reportDate.fire('change');
+  const before = app.storage.getItem(C.STORAGE_KEY);
+  app.options.failWrites = true;
+  await enter(app, '今天的未保存草稿');
+  await ui.historyButton.fire('click');
+  await ui.historyList.children[0].children[1].children[0].fire('click');
+  assert.equal(ui.previewDialog.open, true);
+  await ui.copyButton.fire('click');
+  assert.match(ui.manualCopy.value, /昨日检修门禁/);
+  assert.doesNotMatch(ui.manualCopy.value, /今天的未保存草稿/);
+  assert.equal(ui.workContent.value, '今天的未保存草稿');
+  assert.equal(app.storage.getItem(C.STORAGE_KEY), before);
+});
 test('unavailable and rejected clipboard APIs offer manual copying instead of false success', async () => {
   for (const navigator of [{}, { clipboard: { writeText: async () => { throw new Error('denied'); } } }]) {
     const app = setup({}, { navigator });
