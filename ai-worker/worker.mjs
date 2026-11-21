@@ -2,8 +2,8 @@ import { scheduleReport } from './schedule.mjs';
 import { colleagueMayGenerate, handleApproval, isApprovalPath, isColleagueAuthorization } from './approvals.mjs';
 export { AiApprovals } from './approvals.mjs';
 
-const model = 'deepseek-ai/DeepSeek-V4.1-Flash';
-const endpoint = 'https://api.siliconflow.cn/v1/chat/completions';
+const model = 'deepseek-flash';
+const endpoint = 'https://api.deepseek.com/chat/completions';
 const maxNoteLength = 1800;
 const encoder = new TextEncoder();
 const deviceLifetime = 30 * 24 * 60 * 60;
@@ -65,10 +65,10 @@ function encodeDevicePart(bytes) {
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-function deviceKey(env) {
+function deviceKey(apiKey, accessToken) {
   // Require both server secrets so a device credential cannot be used to
   // guess a weak user-chosen access code offline.
-  const secret = env.SILICONFLOW_API_KEY.trim() + '\0' + env.AI_ACCESS_TOKEN;
+  const secret = apiKey + '\0' + accessToken;
   return crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify']);
 }
 
@@ -76,22 +76,27 @@ function deviceMessage(prefix, origin) {
   return encoder.encode('daily-report:generate:' + origin + ':' + prefix);
 }
 
-async function issueDevice(env, origin) {
+async function issueDevice(apiKey, accessToken, origin) {
   const expires = Math.floor(Date.now() / 1000) + deviceLifetime;
   const nonce = encodeDevicePart(crypto.getRandomValues(new Uint8Array(12)));
   const prefix = `device.v1.${expires}.${nonce}`;
-  const signature = await crypto.subtle.sign('HMAC', await deviceKey(env), deviceMessage(prefix, origin));
+  const signature = await crypto.subtle.sign('HMAC', await deviceKey(apiKey, accessToken), deviceMessage(prefix, origin));
   return prefix + '.' + encodeDevicePart(new Uint8Array(signature));
 }
 
-async function verifyDevice(token, env, origin) {
+async function verifyDevice(token, apiKey, env, origin) {
   const match = devicePattern.exec(token);
   if (!match || Number(match[1]) <= Math.floor(Date.now() / 1000)) return false;
   const separator = token.lastIndexOf('.');
   const bytes = atob(token.slice(separator + 1).replace(/-/g, '+').replace(/_/g, '/'));
   const signature = Uint8Array.from(bytes, char => char.charCodeAt(0));
   if (encodeDevicePart(signature) !== token.slice(separator + 1)) return false;
-  return crypto.subtle.verify('HMAC', await deviceKey(env), signature, deviceMessage(token.slice(0, separator), origin));
+  const message = deviceMessage(token.slice(0, separator), origin);
+  const verify = async key => crypto.subtle.verify('HMAC', await deviceKey(key, env.AI_ACCESS_TOKEN), signature, message);
+  if (await verify(apiKey)) return true;
+  // Previously issued device credentials retain their original expiry.
+  const previousKey = env.SILICONFLOW_API_KEY?.trim();
+  return !!previousKey && await verify(previousKey);
 }
 
 async function readJson(request, maxBytes) {
@@ -141,7 +146,7 @@ export default {
         return reply(503, { error: '审批服务暂未响应，请稍后重试。' }, origin);
       }
     }
-    const apiKey = env.SILICONFLOW_API_KEY?.trim();
+    const apiKey = env.DEEPSEEK_API_KEY?.trim();
     if (!apiKey || !/^[A-Za-z0-9_-]{24,128}$/.test(env.AI_ACCESS_TOKEN || '') || !env.AI_RATE_LIMIT) {
       return reply(503, { error: 'AI 服务尚未配置。' }, origin);
     }
@@ -151,7 +156,7 @@ export default {
     let authenticated;
     try {
       if (colleague) authenticated = await colleagueMayGenerate(authorization, env.AI_APPROVALS);
-      else if (deviceToken) authenticated = await verifyDevice(deviceToken, env, origin);
+      else if (deviceToken) authenticated = await verifyDevice(deviceToken, apiKey, env, origin);
       else authenticated = await matchesToken(authorization, env.AI_ACCESS_TOKEN);
     } catch {
       return reply(503, { error: '授权服务暂未响应，请稍后重试。' }, origin);
@@ -179,17 +184,19 @@ export default {
           model,
           messages: [{ role: 'system', content: prompt }, { role: 'user', content: note }],
           response_format: { type: 'json_object' },
-          enable_thinking: false,
+          thinking: { type: 'disabled' },
+          stream: false,
           temperature: 0.1,
           max_tokens: 2400
         }),
         signal: AbortSignal.timeout(25000)
       });
       if (upstream.status === 401) {
-        return reply(502, { code: 'provider_key_invalid', error: '硅基流动未接受 API Key。' }, origin);
+        return reply(502, { code: 'provider_key_invalid', error: 'DeepSeek 未接受 API 密钥。' }, origin);
       }
+      if (upstream.status === 402) return reply(402, { error: 'DeepSeek API 账户余额不足。' }, origin);
       if (upstream.status === 429) return reply(429, { error: '模型当前限流，请稍后重试。' }, origin);
-      if (!upstream.ok) return reply(502, { code: 'provider_unavailable', error: '硅基流动暂未成功响应，请稍后重试。' }, origin);
+      if (!upstream.ok) return reply(502, { code: 'provider_unavailable', error: 'DeepSeek 暂未成功响应，请稍后重试。' }, origin);
       let result;
       try {
         const payload = await upstream.json();
@@ -204,7 +211,9 @@ export default {
       }
       if (!result.entries.length) return reply(422, { error: '没有识别到工作事项，请补充当天做了什么。' }, origin);
       for (const entry of result.entries) entry.content = polishBriefContent(entry.content);
-      if (input.rememberDevice === true && !deviceToken && !colleague) result.deviceToken = await issueDevice(env, origin);
+      if (input.rememberDevice === true && !deviceToken && !colleague) {
+        result.deviceToken = await issueDevice(apiKey, env.AI_ACCESS_TOKEN, origin);
+      }
       return reply(200, result, origin);
     } catch (error) {
       if (error.name === 'TimeoutError' || error.name === 'AbortError') {

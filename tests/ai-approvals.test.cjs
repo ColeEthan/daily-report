@@ -23,7 +23,7 @@ async function fixture(t) {
   const store = new AiApprovals({ storage: { sql } });
   const env = {
     APP_ORIGIN: origin, AI_ACCESS_TOKEN: regularCode, AI_ADMIN_TOKEN: adminCode,
-    SILICONFLOW_API_KEY: 'synthetic-key', AI_RATE_LIMIT: { limit: async () => ({ success: true }) },
+    DEEPSEEK_API_KEY: 'synthetic-key', AI_RATE_LIMIT: { limit: async () => ({ success: true }) },
     AI_APPROVALS: {
       idFromName: () => 'test-store',
       get: () => ({ fetch: (url, options) => store.fetch(new Request(url, options)) })

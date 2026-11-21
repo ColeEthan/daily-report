@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { createHmac } = require('node:crypto');
 const { setup, C, enter } = require('./helpers.cjs');
 
 const origin = 'https://coleethan.github.io';
@@ -8,7 +9,7 @@ const note = '上午福源修门禁和刷卡，下午锦园看电梯';
 const env = {
   APP_ORIGIN: origin,
   AI_ACCESS_TOKEN: token,
-  SILICONFLOW_API_KEY: 'fake-upstream-key',
+  DEEPSEEK_API_KEY: 'fake-upstream-key',
   AI_RATE_LIMIT: { limit: async () => ({ success: true }) }
 };
 
@@ -26,12 +27,13 @@ async function requestWorker(options = {}) {
 
 test('Worker sends only the current description to DeepSeek and returns a valid schedule', async t => {
   const call = t.mock.method(globalThis, 'fetch', async (url, options) => {
-    assert.equal(url, 'https://api.siliconflow.cn/v1/chat/completions');
+    assert.equal(url, 'https://api.deepseek.com/chat/completions');
     assert.equal(options.headers.Authorization, 'Bearer fake-upstream-key');
     assert.equal(options.redirect, 'manual');
     const body = JSON.parse(options.body);
-    assert.equal(body.model, 'deepseek-ai/DeepSeek-V4.1-Flash');
-    assert.equal(body.enable_thinking, false);
+    assert.equal(body.model, 'deepseek-flash');
+    assert.deepEqual(body.thinking, { type: 'disabled' });
+    assert.equal(body.stream, false);
     assert.deepEqual(body.response_format, { type: 'json_object' });
     assert.match(body.messages[0].content, /不使用“开展”/);
     assert.match(body.messages[0].content, /景园或颈园→锦园/);
@@ -57,7 +59,9 @@ test('Worker rejects unconfigured, unauthenticated, throttled and excessive requ
   const fetch = t.mock.method(globalThis, 'fetch', () => assert.fail('unexpected upstream call'));
   assert.equal((await requestWorker({ headers: { Origin: 'https://untrusted.example' } })).status, 403);
   assert.equal((await requestWorker({ headers: { Authorization: 'Bearer wrong' } })).status, 401);
-  assert.equal((await requestWorker({ env: { SILICONFLOW_API_KEY: '' } })).status, 503);
+  assert.equal((await requestWorker({
+    env: { DEEPSEEK_API_KEY: '', SILICONFLOW_API_KEY: 'fake-legacy-key' }
+  })).status, 503);
   assert.equal((await requestWorker({ note: '长'.repeat(1801) })).status, 400);
   assert.equal((await requestWorker({ env: { AI_RATE_LIMIT: { limit: async () => ({ success: false }) } } })).status, 429);
   assert.equal(fetch.mock.callCount(), 0);
@@ -115,6 +119,10 @@ test('Worker handles provider failures and incomplete model output without retur
   const invalidKey = await requestWorker();
   assert.equal(invalidKey.status, 502);
   assert.equal((await invalidKey.json()).code, 'provider_key_invalid');
+  fetch.mock.mockImplementation(async () => new Response(null, { status: 402 }));
+  const noBalance = await requestWorker();
+  assert.equal(noBalance.status, 402);
+  assert.match((await noBalance.json()).error, /余额不足/);
   fetch.mock.mockImplementation(async () => Response.redirect('https://example.com'));
   assert.equal((await requestWorker()).status, 502);
   fetch.mock.mockImplementation(async () => Response.json({ choices: [{ finish_reason: 'length' }] }));
@@ -123,6 +131,25 @@ test('Worker handles provider failures and incomplete model output without retur
   assert.equal((await incomplete.json()).code, 'provider_output_invalid');
   fetch.mock.mockImplementation(async () => { throw new DOMException('aborted', 'TimeoutError'); });
   assert.equal((await requestWorker()).status, 504);
+});
+
+test('an existing device can use DeepSeek without sending the previous provider key', async t => {
+  const oldKey = 'fake-legacy-key';
+  const prefix = `device.v1.${Math.floor(Date.now() / 1000) + 3600}.AAAAAAAAAAAAAAAA`;
+  const signature = createHmac('sha256', oldKey + '\0' + token)
+    .update('daily-report:generate:' + origin + ':' + prefix).digest('base64url');
+  const headers = { Authorization: `Bearer ${prefix}.${signature}` };
+  const call = t.mock.method(globalThis, 'fetch', async (url, options) => {
+    assert.equal(url, 'https://api.deepseek.com/chat/completions');
+    assert.equal(options.headers.Authorization, 'Bearer ' + env.DEEPSEEK_API_KEY);
+    return Response.json({ choices: [{
+      finish_reason: 'stop',
+      message: { content: JSON.stringify({ items: [item('测试巡检。', 'morning')] }) }
+    }] });
+  });
+  assert.equal((await requestWorker({ headers })).status, 401);
+  assert.equal((await requestWorker({ headers, env: { SILICONFLOW_API_KEY: oldKey } })).status, 200);
+  assert.equal(call.mock.callCount(), 1);
 });
 
 test('sparse model output remains usable and standalone leave is recovered from the description', async t => {
@@ -341,9 +368,13 @@ test('provider failure keeps the current preview and the description', async () 
   assert.equal(el.source.value, note);
   assert.equal(el.rows.children, original);
   assert.match(el.aiStatus.textContent, /请求过多.*简述已保留/);
+  response = new Response(null, { status: 402 });
+  await el.intake.fire('click');
+  assert.match(el.aiStatus.textContent, /余额不足.*简述已保留/);
+  assert.equal(el.rows.children, original);
   response = Response.json({ code: 'provider_key_invalid' }, { status: 502 });
   await el.intake.fire('click');
-  assert.match(el.aiStatus.textContent, /SILICONFLOW_API_KEY/);
+  assert.match(el.aiStatus.textContent, /DEEPSEEK_API_KEY/);
   assert.equal(el.rows.children, original);
 });
 

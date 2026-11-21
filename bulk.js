@@ -472,6 +472,8 @@
                 : '本机记忆已失效，请重新输入 AI 访问口令。';
             }
             accessInput.focus();
+          } else if (response.status === 402) {
+            failure = 'DeepSeek API 账户余额不足，简述已保留。';
           } else if (response.status === 429) {
             failure = 'AI 请求过多，请稍后重试。简述已保留。';
           } else if (response.status === 422) {
@@ -483,7 +485,7 @@
           } else if (response.status === 502) {
             const detail = await response.json().catch(() => null);
             if (detail?.code === 'provider_key_invalid') {
-              failure = '硅基流动 API Key 无效，请在 Cloudflare 更新 SILICONFLOW_API_KEY。';
+              failure = 'DeepSeek API 密钥无效，请在 Cloudflare 更新 DEEPSEEK_API_KEY。';
             } else if (detail?.code === 'provider_output_invalid') {
               failure = '模型返回的日报格式不完整，简述已保留，请重试。';
             } else if (detail?.code === 'provider_unavailable') {

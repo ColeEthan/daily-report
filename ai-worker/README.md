@@ -1,16 +1,16 @@
 # DeepSeek 接入
 
-原日报网页通过 Worker 调用硅基流动的 DeepSeek V4.1 Flash。只有走 AI 整理时，网页才发送这次录入的文字。按原文识别、历史记录、预览和保存均在浏览器内处理。
+原日报网页通过 Worker 调用 DeepSeek 官方 API 的 `deepseek-flash`。只有走 AI 整理时，网页才发送这次录入的文字。按原文识别、历史记录、预览和保存均在浏览器内处理。
 
 ## 开通
 
-1. 在硅基流动核对 `deepseek-ai/DeepSeek-V4.1-Flash` 的计费规则和账户余额。已有 API Key 可继续使用，初次配置可新建。参考[模型广场](https://cloud.siliconflow.cn/open/models?types=chat)和[API 密钥](https://cloud.siliconflow.cn/account/ak)。
-2. 在本目录运行 `npx wrangler login`，在浏览器里用自己的 Cloudflare 账号授权，然后运行 `npx wrangler deploy`。初次部署缺少密钥时接口会返回未配置。
-3. 运行 `npx wrangler secret put SILICONFLOW_API_KEY`，在命令提示中粘贴硅基流动密钥。运行 `npx wrangler secret put AI_ACCESS_TOKEN`，输入单独生成的访问口令，例如用 `openssl rand -hex 24` 生成。口令与 API Key 用途不同，口令填在日报网页的 AI 区域。两者都只在 Wrangler 的输入提示中设置，避免写入代码、命令参数或聊天。
+1. 在 [DeepSeek 开放平台](https://platform.deepseek.com/api_keys) 创建官方 API 密钥并核对余额。模型用量记在该 DeepSeek 账户。参考[模型与价格](https://api-docs.deepseek.com/zh-cn/quick_start/pricing/)。
+2. 在现有 Worker 的「设置 → 运行时变量和密钥」中添加生产环境的加密密钥 `DEEPSEEK_API_KEY`，再发布 Worker。也可以在本目录运行 `npx wrangler login`，用自己的 Cloudflare 账号授权后用 `npx wrangler secret put DEEPSEEK_API_KEY` 配置现有 Worker。新建 Worker 时先部署到对应账号，再设置所需密钥。
+3. 初次配置时用 `npx wrangler secret put AI_ACCESS_TOKEN` 设置独立访问口令，例如用 `openssl rand -hex 24` 生成。口令填在日报网页的 AI 区域，官方 API 密钥存入 Cloudflare。由硅基流动迁移时，可将原 `SILICONFLOW_API_KEY` 保留最长 30 天，用于验证此前签发的设备凭证。模型请求全部发送到 DeepSeek 官方 API。
 4. 将首页 `index.html` 中 `aiSection` 的 `data-endpoint` 设为部署所得的 HTTPS Worker 地址加 `/generate`，随网页发布。仅填 URL。空值时不显示 AI 区域。当前 Worker 只允许来自原日报网站的网页请求，并校验独立口令。
 5. 在线上原网址输入一段测试用工作简述，检查生成和时间预览。使用正式记录前先核对日期和估排时段。
 
-Worker 固定使用上述模型，以非思考模式请求 JSON。每次生成发出一次模型请求，限流是每个 Cloudflare 节点约每分钟六次。模型按硅基流动的用量规则计费。
+Worker 固定使用上述模型，以非思考模式请求 JSON。每次生成发出一次模型请求，限流是每个 Cloudflare 节点约每分钟六次。
 
 ## 本地验证
 

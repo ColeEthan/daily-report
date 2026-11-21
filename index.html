@@ -13,7 +13,7 @@
 <script src="bulk-core.js?v=20261120-history-search" defer></script>
 <script src="app.js?v=20261120-history-search" defer></script>
 <script src="ai-approvals.js?v=20261119" defer></script>
-<script src="bulk.js?v=20261121-deepseek" defer></script>
+<script src="bulk.js?v=20261121-deepseek-direct" defer></script>
 <link rel="stylesheet" href="bulk-embedded.css?v=20261120-history-search">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -434,7 +434,7 @@
 <section>
   <label for="source">工作内容</label>
   <textarea id="source" rows="5" maxlength="100000" placeholder="例如：上午福源修门禁，下午锦园看电梯。也可以粘贴整份日报。"></textarea>
-  <p class="hint">按原文录入会保留已有时间。使用 AI 整理时，这里输入的文字会发给硅基流动。</p>
+  <p class="hint">按原文录入会保留已有时间。使用 AI 整理时，这里输入的文字会发给 DeepSeek 官方 API。</p>
   <div class="bulk-actions">
     <button id="intake" type="button" hidden>生成并预览</button>
     <button id="parse" type="button" class="secondary">按原文录入</button>
