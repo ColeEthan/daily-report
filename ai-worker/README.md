@@ -1,16 +1,16 @@
-# 通义千问接入
+# DeepSeek 接入
 
-原日报网页通过 Worker 调用硅基流动的免费模型 Qwen/Qwen2.5-7B-Instruct。只有走 AI 整理时，网页才发送这次录入的文字。按原文识别、历史记录、预览和保存均在浏览器内处理。
+原日报网页通过 Worker 调用硅基流动的 DeepSeek V4.1 Flash。只有走 AI 整理时，网页才发送这次录入的文字。按原文识别、历史记录、预览和保存均在浏览器内处理。
 
 ## 开通
 
-1. 在 [硅基流动](https://cloud.siliconflow.cn/account/ak) 登录，新建 API Key。可先到[模型广场](https://cloud.siliconflow.cn/open/models?types=chat)核对 Qwen/Qwen2.5-7B-Instruct 当前仍标为 Free。
+1. 在硅基流动核对 `deepseek-ai/DeepSeek-V4.1-Flash` 的计费规则和账户余额。已有 API Key 可继续使用，初次配置可新建。参考[模型广场](https://cloud.siliconflow.cn/open/models?types=chat)和[API 密钥](https://cloud.siliconflow.cn/account/ak)。
 2. 在本目录运行 `npx wrangler login`，在浏览器里用自己的 Cloudflare 账号授权，然后运行 `npx wrangler deploy`。初次部署缺少密钥时接口会返回未配置。
 3. 运行 `npx wrangler secret put SILICONFLOW_API_KEY`，在命令提示中粘贴硅基流动密钥。运行 `npx wrangler secret put AI_ACCESS_TOKEN`，输入单独生成的访问口令，例如用 `openssl rand -hex 24` 生成。口令与 API Key 用途不同，口令填在日报网页的 AI 区域。两者都只在 Wrangler 的输入提示中设置，避免写入代码、命令参数或聊天。
 4. 将首页 `index.html` 中 `aiSection` 的 `data-endpoint` 设为部署所得的 HTTPS Worker 地址加 `/generate`，随网页发布。仅填 URL。空值时不显示 AI 区域。当前 Worker 只允许来自原日报网站的网页请求，并校验独立口令。
 5. 在线上原网址输入一段测试用工作简述，检查生成和时间预览。使用正式记录前先核对日期和估排时段。
 
-Worker 固定使用上述模型，无付费模型回退。每次生成一次请求，限流是每个 Cloudflare 节点约每分钟六次。免费模型开放情况和用量限制由硅基流动决定。
+Worker 固定使用上述模型，以非思考模式请求 JSON。每次生成发出一次模型请求，限流是每个 Cloudflare 节点约每分钟六次。模型按硅基流动的用量规则计费。
 
 ## 本地验证
 

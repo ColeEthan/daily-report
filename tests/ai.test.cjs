@@ -24,13 +24,15 @@ async function requestWorker(options = {}) {
   }), { ...env, ...options.env });
 }
 
-test('Worker routes only the current description to the fixed free model and returns a valid schedule', async t => {
+test('Worker sends only the current description to DeepSeek and returns a valid schedule', async t => {
   const call = t.mock.method(globalThis, 'fetch', async (url, options) => {
     assert.equal(url, 'https://api.siliconflow.cn/v1/chat/completions');
     assert.equal(options.headers.Authorization, 'Bearer fake-upstream-key');
     assert.equal(options.redirect, 'manual');
     const body = JSON.parse(options.body);
-    assert.equal(body.model, 'Qwen/Qwen2.5-7B-Instruct');
+    assert.equal(body.model, 'deepseek-ai/DeepSeek-V4.1-Flash');
+    assert.equal(body.enable_thinking, false);
+    assert.deepEqual(body.response_format, { type: 'json_object' });
     assert.match(body.messages[0].content, /不使用“开展”/);
     assert.match(body.messages[0].content, /景园或颈园→锦园/);
     assert.equal(body.messages[1].content, note);
@@ -338,7 +340,7 @@ test('provider failure keeps the current preview and the description', async () 
   await el.intake.fire('click');
   assert.equal(el.source.value, note);
   assert.equal(el.rows.children, original);
-  assert.match(el.aiStatus.textContent, /限流/);
+  assert.match(el.aiStatus.textContent, /请求过多.*简述已保留/);
   response = Response.json({ code: 'provider_key_invalid' }, { status: 502 });
   await el.intake.fire('click');
   assert.match(el.aiStatus.textContent, /SILICONFLOW_API_KEY/);

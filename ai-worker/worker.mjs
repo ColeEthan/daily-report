@@ -2,7 +2,7 @@ import { scheduleReport } from './schedule.mjs';
 import { colleagueMayGenerate, handleApproval, isApprovalPath, isColleagueAuthorization } from './approvals.mjs';
 export { AiApprovals } from './approvals.mjs';
 
-const model = 'Qwen/Qwen2.5-7B-Instruct';
+const model = 'deepseek-ai/DeepSeek-V4.1-Flash';
 const endpoint = 'https://api.siliconflow.cn/v1/chat/completions';
 const maxNoteLength = 1800;
 const encoder = new TextEncoder();
@@ -179,6 +179,7 @@ export default {
           model,
           messages: [{ role: 'system', content: prompt }, { role: 'user', content: note }],
           response_format: { type: 'json_object' },
+          enable_thinking: false,
           temperature: 0.1,
           max_tokens: 2400
         }),
@@ -187,7 +188,7 @@ export default {
       if (upstream.status === 401) {
         return reply(502, { code: 'provider_key_invalid', error: '硅基流动未接受 API Key。' }, origin);
       }
-      if (upstream.status === 429) return reply(429, { error: '免费模型当前限流，请稍后重试。' }, origin);
+      if (upstream.status === 429) return reply(429, { error: '模型当前限流，请稍后重试。' }, origin);
       if (!upstream.ok) return reply(502, { code: 'provider_unavailable', error: '硅基流动暂未成功响应，请稍后重试。' }, origin);
       let result;
       try {

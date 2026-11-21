@@ -473,7 +473,7 @@
             }
             accessInput.focus();
           } else if (response.status === 429) {
-            failure = '免费模型暂时限流，请稍后重试。';
+            failure = 'AI 请求过多，请稍后重试。简述已保留。';
           } else if (response.status === 422) {
             failure = '未识别到工作事项，请补充当天做了什么。';
           } else if (response.status === 503) {
