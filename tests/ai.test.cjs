@@ -37,6 +37,8 @@ test('Worker sends only the current description to DeepSeek and returns a valid 
     assert.deepEqual(body.response_format, { type: 'json_object' });
     assert.match(body.messages[0].content, /不使用“开展”/);
     assert.match(body.messages[0].content, /景园或颈园→锦园/);
+    assert.match(body.messages[0].content, /河源或合园只有在上下文明确时改为和园/);
+    assert.match(body.messages[0].content, /只返回 JSON 对象/);
     assert.equal(body.messages[1].content, note);
     return Response.json({ choices: [{
       finish_reason: 'stop',
@@ -148,7 +150,7 @@ test('AI remembers the selected preset in the same browser and includes it in ge
 test('AI polishes terse work descriptions and keeps specific details and results', async t => {
   const descriptions = [
     '查看锦园监控。', '查看商云', '远程看福源监控系统。', '陪同市标检查。',
-    '查看锦园监控录像，发现一处画面异常。', '查看商云系统日志。', '维修单元门磁吸锁，待配件。'
+    '查看监控。', '查看锦园监控录像，发现一处画面异常。', '查看商云系统日志。', '维修单元门磁吸锁，待配件。'
   ];
   t.mock.method(globalThis, 'fetch', async () => Response.json({ choices: [{
     finish_reason: 'stop',
@@ -158,7 +160,7 @@ test('AI polishes terse work descriptions and keeps specific details and results
   assert.equal(response.status, 200);
   assert.deepEqual((await response.json()).entries.map(row => row.content), [
     '查看锦园监控运行情况。', '查看商云运行。', '远程查看福源监控系统运行情况。', '陪同市标检查，配合现场检查工作。',
-    ...descriptions.slice(4)
+    '查看监控画面。', ...descriptions.slice(5)
   ]);
 });
 
