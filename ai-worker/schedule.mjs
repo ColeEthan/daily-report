@@ -7,6 +7,7 @@ const timePattern = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 const estimateStep = 30;
 const offPeriods = { 上午: 'morning_off', 下午: 'afternoon_off', 全天: 'day_off' };
 const restContent = /^(?:今天|当天)?\s*(上午|下午|全天)?\s*(休班|休假|请假)(?:\s*(半天|一天|全天))?[。！!]*$/;
+const untimedRequest = /时间\s*(?:留空|待定|不详|未知|不填|不排|不写|不确定)|(?:不用|无需|不必|不要|不需要|别)\s*(?:填写|安排|估排|分配|记录|写|填|排|加|生成|标注)?\s*(?:具体)?时间/;
 
 function roundUp(minutes) {
   return Math.ceil(minutes / estimateStep) * estimateStep;
@@ -165,6 +166,19 @@ function normalizeItem(item) {
   return { content, period, start, end, nextDay, notBefore, weight, needsTimeReview };
 }
 
+function recoverUntimedWork(work, note) {
+  if (!note || untimedRequest.test(note)) return;
+  const missed = work.filter(item => item.period === 'untimed' && !item.needsTimeReview && !restContent.test(item.content));
+  if (!missed.length) return;
+  for (const item of missed) item.period = item.notBefore >= 720 ? 'afternoon' : 'unknown';
+  for (const clause of sourceClauses(note)) {
+    const marker = /^\s*(?:今天|当天)?\s*(上午|下午)/.exec(clause);
+    if (!marker) continue;
+    const item = matchDescription(work, clause.slice(marker[0].length));
+    if (missed.includes(item) && item.period === 'unknown') item.period = marker[1] === '上午' ? 'morning' : 'afternoon';
+  }
+}
+
 function restoreExplicitRest(work, note) {
   const restPeriods = new Set();
   const descriptions = [];
@@ -260,6 +274,7 @@ function estimateSlot([from, until], group) {
 export function scheduleReport(items, note = '') {
   if (!Array.isArray(items) || items.length > 12) throw new Error('Invalid items');
   const work = items.map(normalizeItem);
+  recoverUntimedWork(work, note);
   restoreExplicitRest(work, note);
   keepBoundsOpen(work, note);
   const unresolvedRanges = restoreSourceRanges(work, note);

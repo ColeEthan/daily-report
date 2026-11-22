@@ -20,6 +20,15 @@ test('handles no-time work, open ended headings, Chinese colon and inline work',
   assert.equal(B.parse('17:30— 田园开会').entries[0].end, '');
   assert.equal(B.parse('8：00—12：00，检修：门禁').entries[0].content, '检修：门禁');
 });
+test('reads pasted times immediately followed by Chinese descriptions', () => {
+  const { mode, parsed } = B.inspectInput('8:00-10:00回复业主信息\n10:00-12:00巡查园区\n17:00去田园');
+  assert.equal(mode, 'local');
+  assert.deepEqual(parsed.entries.map(({ start, end, content }) => [start, end, content]), [
+    ['08:00', '10:00', '回复业主信息'], ['10:00', '12:00', '巡查园区'], ['17:00', '', '去田园']
+  ]);
+  assert.equal(B.inspectInput('17:00去田园').mode, 'local');
+  assert.throws(() => B.parse('8:00-10:000巡查园区'), /时间无法识别/);
+});
 test('recognizes numbered report headings with spaced colons without rewriting descriptions', () => {
   const parsed = B.parse([
     '测试员工作汇报',

@@ -31,7 +31,7 @@ const propertyManagementPrompt = `你是物业管理人员的工作汇报整理�
 - 例如“和客服整理业主关于公众责任险提出的问题和回复话术”可写成“与客服整理业主关于公众责任险的问题及回复话术。”例句只用于参考写法。`;
 
 const schedulePrompt = `时间由程序排。只提取用户明确指定的时间和上午、下午：
-- period 使用 morning（上午）、afternoon（下午）、unknown（未注明）、untimed（明确无时间）、morning_off、afternoon_off、day_off。沿用上下文的上午或下午，休班、请假单列。
+- period 使用 morning（上午）、afternoon（下午）、unknown（未提到上午或下午，需估排）、untimed（原文明确要求时间留空或写明时间待定）、morning_off、afternoon_off、day_off。没说几点但说了上午或下午时，使用对应时段，休班、请假单列。
 - start/end 用24小时制 HH:MM，只提取明确发生的开始和结束时刻，未说明为 null。明确只说会议开始时间就让 end 为 null。nextDay 仅在明确跨夜时为 true。
 - 如果用户提供了已有的日报或在句子里写出了实际时间段，将起止时间原样对应到所属工作。按原文条目顺序保留工作，避免把编号、日期、楼号当作时间。只有没有写明时间的事项才交给程序估排。
 - notBefore 表示最早可开始的时刻，未说明为 null。看到“几点以后”“某时之后”“不早于”时，把该时间填入 notBefore；除非另外说明了实际时刻，start 和 end 都是 null。

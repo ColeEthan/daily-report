@@ -55,6 +55,24 @@ test('Worker sends only the current description to DeepSeek and returns a valid 
   assert.deepEqual(result.entries.map(row => [row.start, row.end]), [['08:00', '12:00'], ['13:30', '17:30']]);
 });
 
+test('mistaken untimed tags still get estimates unless the source asks to leave time open', async () => {
+  const { scheduleReport } = await import('../ai-worker/schedule.mjs');
+  const generated = [item('巡查园区。', 'untimed'), item('回复业主消息。', 'untimed')];
+  const estimated = scheduleReport(generated, '巡查园区，回复业主消息');
+  assert.equal(estimated.estimated, true);
+  assert.deepEqual(estimated.entries.map(({ start, end }) => [start, end]), [
+    ['08:00', '12:00'], ['13:30', '17:30']
+  ]);
+  const afternoon = scheduleReport([generated[0]], '下午巡查园区');
+  assert.deepEqual(afternoon.entries.map(({ start, end }) => [start, end]), [['13:30', '17:30']]);
+  for (const note of ['巡查园区，时间待定', '巡查园区，不用填写时间']) {
+    const result = scheduleReport([generated[0]], note);
+    assert.equal(result.estimated, false);
+    assert.equal(result.entries[0].start, '');
+  }
+  assert.equal(scheduleReport([item('休班。', 'untimed')], '休班').entries[0].start, '');
+});
+
 test('Worker rejects unconfigured, unauthenticated, throttled and excessive requests before calling the model', async t => {
   const fetch = t.mock.method(globalThis, 'fetch', () => assert.fail('unexpected upstream call'));
   assert.equal((await requestWorker({ headers: { Origin: 'https://untrusted.example' } })).status, 403);

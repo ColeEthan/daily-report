@@ -8,6 +8,7 @@
   const looksLikeTime = /^[0-9０-９]{1,2}\s*[:：点]/;
   const rangeSeparator = /^\s*[-－—–~～至]\s*(?:(次日)\s*)?/;
   const contentSeparator = /^[\s,，:：、]+/;
+  const inlineChinese = /^\p{Script=Han}/u;
   const dateHeader = /^(?:日期\s*[:：]\s*)?(\d{4})[-年/](\d{1,2})[-月/](\d{1,2})日?$/;
   const nameHeader = /^姓名\s*[:：]\s*(.*)$/;
   const namedTitle = /^(.{1,100}?)工作汇报$/;
@@ -35,7 +36,7 @@
       if (end) rest = rest.slice(end[0].length);
       else if (range[1] || looksLikeTime.test(rest)) throw invalidTime();
     }
-    if (rest && (!range || end) && !contentSeparator.test(rest)) throw invalidTime();
+    if (rest && (!range || end) && !contentSeparator.test(rest) && !inlineChinese.test(rest)) throw invalidTime();
     const format = match => match[1].normalize('NFKC').padStart(2, '0') + ':' + match[2].normalize('NFKC');
     // Normalize only the clock digits so the pasted work description stays intact.
     return { start: format(start), end: end ? format(end) : '', nextDay: !!range?.[1],
@@ -105,7 +106,7 @@
       const time = clock.exec(item);
       if (!time) return false;
       const rest = item.slice(time[0].length);
-      return !rest || contentSeparator.test(rest) || rangeSeparator.test(rest);
+      return !rest || contentSeparator.test(rest) || rangeSeparator.test(rest) || inlineChinese.test(rest);
     });
     if (!hasStructure) return { mode: 'ai' };
     try {
