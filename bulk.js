@@ -363,7 +363,9 @@
     const remember = $('aiRememberDevice');
     const forget = $('aiForgetDevice');
     const accessSummary = $('aiAccessSummary');
-    const deviceStorageKey = 'daily_report_ai_device_v1:' + endpoint.href;
+    // Keep browser credentials when the same Worker moves to a different hostname.
+    const credentialScope = aiSection.dataset.credentialScope || endpoint.href;
+    const deviceStorageKey = 'daily_report_ai_device_v1:' + credentialScope;
     const devicePattern = /^device\.v1\.\d{10}\.[A-Za-z0-9_-]{16}\.[A-Za-z0-9_-]{43}$/;
     function readDevice() {
       let token = '';
@@ -383,7 +385,7 @@
       return true;
     }
     readDevice();
-    const approvals = window.DailyReportApprovals?.setup({ endpoint, readDevice, saveDevice, onApproved() {
+    const approvals = window.DailyReportApprovals?.setup({ endpoint, credentialScope, readDevice, saveDevice, onApproved() {
       accessInput.value = '';
       remember.checked = false;
       $('aiAccess').open = false;

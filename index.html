@@ -12,8 +12,8 @@
 <script src="core.js?v=20261120-history-search" defer></script>
 <script src="bulk-core.js?v=20261120-history-search" defer></script>
 <script src="app.js?v=20261120-history-search" defer></script>
-<script src="ai-approvals.js?v=20261119" defer></script>
-<script src="bulk.js?v=20261121-deepseek-direct" defer></script>
+<script src="ai-approvals.js?v=20261122-api-domain" defer></script>
+<script src="bulk.js?v=20261122-api-domain" defer></script>
 <link rel="stylesheet" href="bulk-embedded.css?v=20261120-history-search">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -443,7 +443,8 @@
   <p id="message" role="status" aria-live="polite"></p>
   <p id="aiStatus" role="status"></p>
   <p id="aiLocalNotice" hidden>请<a href="https://coleethan.github.io/daily-report/">打开正式日报网页</a>使用 AI 整理。</p>
-  <div id="aiSection" data-endpoint="https://daily-report-ai.chengyinan1990.workers.dev/generate" hidden>
+  <div id="aiSection" data-endpoint="https://daily-report-api.9006064.xyz/generate"
+       data-credential-scope="https://daily-report-ai.chengyinan1990.workers.dev/generate" hidden>
   <div class="ai-approval-tools">
     <button id="aiRequestAccess" type="button">申请 AI 权限</button>
     <div id="aiPendingActions" hidden>

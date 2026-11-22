@@ -4,6 +4,10 @@ compatibility_date = "2026-11-19"
 workers_dev = true
 preview_urls = false
 
+[[routes]]
+pattern = "daily-report-api.9006064.xyz"
+custom_domain = true
+
 [vars]
 APP_ORIGIN = "https://coleethan.github.io"
 

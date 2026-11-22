@@ -45,7 +45,7 @@ function setup(initial = {}, options = {}) {
     context.DailyReportBulk = require('../bulk-core.js');
     context.sessionStorage = { getItem: key => session.get(key) ?? null, setItem: (key, value) => session.set(key, value), removeItem: key => session.delete(key) };
     if (options.aiFetch) {
-      elements.aiSection.dataset = { endpoint: 'https://worker.example/generate' };
+      elements.aiSection.dataset = { endpoint: 'https://worker.example/generate', ...options.aiSettings };
       Object.assign(context, {
         URL, URLSearchParams, AbortController, clearTimeout, fetch: options.aiFetch,
         location: new URL(options.location || 'https://coleethan.github.io/daily-report/')

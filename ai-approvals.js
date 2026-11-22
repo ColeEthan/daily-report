@@ -4,8 +4,8 @@
   const proofPattern = /^colleague\.v1\.([A-Za-z0-9_-]{22})\.[A-Za-z0-9_-]{43}$/;
   const idPattern = /^[A-Za-z0-9_-]{22}$/;
 
-  function setup({ endpoint, readDevice, saveDevice, onApproved }) {
-    const key = 'daily_report_ai_pending_v1:' + endpoint.href;
+  function setup({ endpoint, credentialScope, readDevice, saveDevice, onApproved }) {
+    const key = 'daily_report_ai_pending_v1:' + credentialScope;
     const status = $('aiApprovalStatus');
     const manager = $('aiApprovalDialog');
     const adminStatus = $('aiApprovalAdminStatus');

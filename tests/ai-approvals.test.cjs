@@ -131,3 +131,35 @@ test('a shared approval link opens the admin panel without carrying the colleagu
   assert.equal(colleague.elements.preview.hidden, false);
   assert.equal(colleague.elements.aiToken.value, '');
 });
+
+test('a new Worker hostname keeps pending and approved browser credentials', async () => {
+  const pendingKey = 'daily_report_ai_pending_v1:https://worker.example/generate';
+  const deviceKey = 'daily_report_ai_device_v1:https://worker.example/generate';
+  const credential = 'colleague.v1.' + 'b'.repeat(22) + '.' + 'a'.repeat(43);
+  const values = new Map([[pendingKey, credential]]);
+  const requests = [];
+  const aiFetch = async (url, options) => {
+    const target = new URL(url);
+    assert.equal(target.hostname, 'daily-report-api.9006064.xyz');
+    assert.equal(options.headers.Authorization, 'Bearer ' + credential);
+    requests.push(target.pathname);
+    return Response.json(target.pathname === '/approval/status' ? { state: 'approved' } : report);
+  };
+  const options = {
+    bulk: true, approvals: true, aiFetch, values,
+    aiSettings: {
+      endpoint: 'https://daily-report-api.9006064.xyz/generate',
+      credentialScope: 'https://worker.example/generate'
+    }
+  };
+  const colleague = setup({}, options);
+  await colleague.elements.aiCheckApproval.fire('click');
+  assert.equal(values.has(pendingKey), false);
+  assert.equal(values.get(deviceKey), credential);
+
+  const reopened = setup({}, options);
+  reopened.elements.source.value = '测试巡检';
+  await reopened.elements.intake.fire('click');
+  assert.equal(reopened.elements.preview.hidden, false);
+  assert.deepEqual(requests, ['/approval/status', '/generate']);
+});
