@@ -5,8 +5,10 @@
 #bulkDialog h3{margin:0;text-align:left}#bulkDialog h2{font-size:18px;margin:0 0 16px}
 #bulkDialog section{padding:18px;background:#fff;border:1px solid #dfe7e3;border-radius:12px;margin:16px 0}
 #bulkDialog label{display:block;font-size:14px;font-weight:600}#bulkDialog textarea{display:block;width:100%;min-height:100px;line-height:1.7;margin-top:8px;resize:vertical}
-#bulkDialog input,#bulkDialog textarea{font:inherit;border:1px solid #c6d3cd;border-radius:8px;padding:10px;background:#fff;color:inherit;max-width:100%}
-#bulkDialog input:focus,#bulkDialog textarea:focus{outline:2px solid #268a6b;outline-offset:2px}
+#bulkDialog input,#bulkDialog textarea,#bulkDialog select{font:inherit;border:1px solid #c6d3cd;border-radius:8px;padding:10px;background:#fff;color:inherit;max-width:100%}
+#bulkDialog input:focus,#bulkDialog textarea:focus,#bulkDialog select:focus{outline:2px solid #268a6b;outline-offset:2px}
+#bulkDialog .ai-profile-row{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+#bulkDialog .ai-profile-row select{min-height:44px}
 #bulkDialog .fields{display:flex;flex-wrap:wrap;gap:12px}#bulkDialog .fields label{flex:1;min-width:115px}#bulkDialog .fields input{display:block;width:100%;margin-top:6px}
 #bulkDialog button{font:inherit;border:0;border-radius:8px;padding:11px 16px;background:#186b53;color:#fff;font-weight:600;cursor:pointer}#bulkDialog button:disabled{opacity:.45;cursor:not-allowed}
 #bulkDialog .bulk-bar button,#bulkDialog .bulk-finish{background:#e5efea;color:#215f4e}#bulkDialog .bulk-bar button{font-size:14px;white-space:nowrap}

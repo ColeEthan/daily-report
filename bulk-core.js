@@ -9,9 +9,14 @@
   const rangeSeparator = /^\s*[-－—–~～至]\s*(?:(次日)\s*)?/;
   const contentSeparator = /^[\s,，:：、]+/;
   const dateHeader = /^(?:日期\s*[:：]\s*)?(\d{4})[-年/](\d{1,2})[-月/](\d{1,2})日?$/;
-  const nameHeader = /^(?:姓名\s*[:：]\s*(.*)|(.{1,100}?)工作汇报)$/;
+  const nameHeader = /^姓名\s*[:：]\s*(.*)$/;
+  const namedTitle = /^(.{1,100}?)工作汇报$/;
   const reportTitle = /^(工作日报|工作汇报)$/;
   const leaveLine = /^(?:(?:上午|下午|全天)\s*)?(?:休班|休假|请假)(?:半天|一天)?[。.]?$/;
+  function matchNameHeader(line, awaitingContent = false) {
+    return nameHeader.exec(line) ||
+      (!awaitingContent && !listPrefix.test(line) && !looksLikeTime.test(line) && namedTitle.exec(line));
+  }
   function parseTimedLine(line, lineNumber) {
     const candidate = line.replace(listPrefix, '');
     const start = clock.exec(candidate);
@@ -61,9 +66,9 @@
       }
       if (/^(?:日期\s*[:：]|\d{4}[-年/]\d)/.test(line)) throw new Error(`第 ${i + 1} 行日期无法识别，请使用 YYYY-MM-DD`);
       if (reportTitle.test(line)) continue;
-      if ((match = nameHeader.exec(line))) {
+      if ((match = matchNameHeader(line, current?.content === ''))) {
         if (result.entries.length || current) throw new Error('姓名请放在日报开头');
-        const name = (match[1] ?? match[2]).trim();
+        const name = match[1].trim();
         if (name.length > 100 || (result.name && result.name !== name)) throw new Error('姓名过长或包含多个姓名');
         result.name = name; continue;
       }
@@ -93,7 +98,7 @@
     let listed = 0;
     const lines = source.split(/\r\n?|\n/).map(line => line.trim()).filter(Boolean);
     const hasStructure = lines.some(line => {
-      if (dateHeader.test(line) || reportTitle.test(line) || (lines.length > 1 && nameHeader.test(line))) return true;
+      if (dateHeader.test(line) || reportTitle.test(line) || (lines.length > 1 && matchNameHeader(line))) return true;
       const item = line.replace(listPrefix, '');
       const numbered = line !== item;
       if (numbered && (++listed >= 2 || looksLikeTime.test(item))) return true;

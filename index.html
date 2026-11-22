@@ -10,11 +10,11 @@
 <title>工作日报</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%93%8B%3C/text%3E%3C/svg%3E">
 <script src="core.js?v=20261120-history-search" defer></script>
-<script src="bulk-core.js?v=20261120-history-search" defer></script>
+<script src="bulk-core.js?v=20261122-preview-fixes" defer></script>
 <script src="app.js?v=20261120-history-search" defer></script>
 <script src="ai-approvals.js?v=20261122-api-domain" defer></script>
-<script src="bulk.js?v=20261122-api-domain" defer></script>
-<link rel="stylesheet" href="bulk-embedded.css?v=20261120-history-search">
+<script src="bulk.js?v=20261122-preview-fixes" defer></script>
+<link rel="stylesheet" href="bulk-embedded.css?v=20261122-job-profiles">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -432,6 +432,13 @@
 <div class="bulk-bar"><h3 id="bulkTitle">AI 录入</h3><button type="button" data-close="bulkDialog">返回日报</button></div>
 <div id="lockStatus" class="notice" role="status"></div><button id="retry" class="secondary" hidden>重新连接保存</button>
 <section>
+  <div id="aiProfileRow" class="ai-profile-row" hidden>
+    <label for="aiProfile">岗位</label>
+    <select id="aiProfile">
+      <option value="maintenance">弱电维修</option>
+      <option value="property-management">物业管理</option>
+    </select>
+  </div>
   <label for="source">工作内容</label>
   <textarea id="source" rows="5" maxlength="100000" placeholder="例如：上午福源修门禁，下午锦园看电梯。也可以粘贴整份日报。"></textarea>
   <p class="hint">按原文录入会保留已有时间。使用 AI 整理时，这里输入的文字会发给 DeepSeek 官方 API。</p>

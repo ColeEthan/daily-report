@@ -8,6 +8,7 @@
   let state = C.emptyState(), raw = null, healthy = false, entries = [], previewRaw = null, plan = null;
   let dirty = false;
   let previewRevision = 0;
+  let previewTarget = null;
   let generateAppend = null;
   let appendDate = '';
   function hasPendingAppend() { return !!appendInput.value.trim(); }
@@ -18,7 +19,7 @@
     dirty = true;
     try { sessionStorage.setItem(draftKey, JSON.stringify({
       source: sourceInput.value, appendSource: appendInput.value, appendDate, date: $('date').value, name: $('name').value, entries,
-      preview: !$('preview').hidden, estimated: $('aiEstimate')?.hidden === false,
+      preview: !$('preview').hidden, previewTarget, estimated: $('aiEstimate')?.hidden === false,
       needsTimeReview: $('aiTimeReview')?.hidden === false
     })); }
     catch { message('浏览器无法暂存输入，请在离开前复制保留文字。'); }
@@ -126,7 +127,10 @@
     const cached = JSON.parse(sessionStorage.getItem(draftKey) || 'null');
     if (cached && typeof cached.source === 'string') {
       sourceInput.value = cached.source;
-      if (C.validDate(cached.date)) $('date').value = cached.date;
+      if (typeof cached.previewTarget?.sourceDate === 'string' && typeof cached.previewTarget?.sourceName === 'string') {
+        previewTarget = cached.previewTarget;
+      }
+      if (C.validDate(cached.date) || (cached.date === '' && previewTarget?.dateEdited)) $('date').value = cached.date;
       if (typeof cached.name === 'string') $('name').value = cached.name;
       if (typeof cached.appendSource === 'string' && cached.appendSource) {
         appendInput.value = cached.appendSource;
@@ -135,6 +139,12 @@
         if (!cached.preview) message('补充内容已暂存，重新预览后可继续追加。');
       }
       if (cached.preview && Array.isArray(cached.entries)) {
+        if (!previewTarget) {
+          // Older previews saved the displayed fields without recording which ones were edited.
+          const parsed = B.inspectInput(cached.source).parsed;
+          previewTarget = { sourceDate: parsed?.date || '', sourceName: parsed?.name || '',
+            dateEdited: C.validDate(cached.date), nameEdited: typeof cached.name === 'string' };
+        }
         // Draft rows can be incomplete. prepare() validates them before saving.
         entries = cached.entries.map(({ start, end, nextDay, content, needsTimeReview }) => {
           if (typeof start !== 'string' || typeof end !== 'string' || typeof content !== 'string') {
@@ -192,17 +202,25 @@
   });
   sourceInput.addEventListener('input', () => {
     previewRevision++;
+    if (!sourceInput.value.trim()) previewTarget = null;
     $('appendPanel').open = hasPendingAppend();
     $('appendStatus').textContent = '';
     $('appendLocal').hidden = true;
     entries = []; plan = null; $('preview').hidden = true;
     message(hasPendingAppend() ? '补充内容已暂存，重新预览后可继续追加。' : ''); stash(); enableSave();
   });
-  function showPreview(parsed) {
+  function showPreview(parsed, selectedDate) {
     load();
     entries = parsed.entries;
-    $('date').value = parsed.date || C.today();
-    $('name').value = parsed.name || state.reports[$('date').value]?.name || state.preferredName;
+    const sourceDate = parsed.date || '', sourceName = parsed.name || '';
+    // A changed report header starts a new target. Editing just the work text keeps manual choices.
+    const newDate = !!sourceDate && sourceDate !== previewTarget?.sourceDate;
+    const newName = !!sourceName && sourceName !== previewTarget?.sourceName;
+    const dateEdited = previewTarget?.dateEdited === true && !newDate;
+    const nameEdited = previewTarget?.nameEdited === true && !newName && (!newDate || sourceDate === $('date').value);
+    if (!dateEdited) $('date').value = sourceDate || (C.validDate(selectedDate) ? selectedDate : C.today());
+    if (!nameEdited) $('name').value = sourceName || state.reports[$('date').value]?.name || state.preferredName;
+    previewTarget = { sourceDate, sourceName, dateEdited, nameEdited };
     previewRaw = raw;
     $('preview').hidden = false;
     const estimate = $('aiEstimate');
@@ -273,7 +291,7 @@
       if (decision?.error) throw decision.error;
       const parsed = decision?.parsed || B.parse(sourceInput.value);
       const selectedDate = host && $('reportDate').value;
-      showPreview({ ...parsed, date: parsed.date || (C.validDate(selectedDate) ? selectedDate : '') });
+      showPreview(parsed, selectedDate);
       message(`已识别 ${entries.length} 条，请在下方检查日期、时间和内容。`);
       $('preview').scrollIntoView?.({ block: 'start' });
     } catch (error) {
@@ -304,9 +322,25 @@
     const parse = $('parse');
     const generate = $('aiGenerate');
     const status = $('aiStatus');
+    const profile = $('aiProfile');
+    if (profile) {
+      const profileKey = 'daily_report_ai_profile';
+      try {
+        if (localStorage.getItem(profileKey) === 'property-management') profile.value = 'property-management';
+      } catch { /* The choice still works for the current page. */ }
+      profile.addEventListener('change', () => {
+        try { localStorage.setItem(profileKey, profile.value); }
+        catch { /* Keep the current selection even if storage is unavailable. */ }
+      });
+      $('aiProfileRow').hidden = false;
+    }
     let choice = null;
     let active = null;
     let activeAppend = false;
+    function setGenerating(generating) {
+      $('appendSubmit').disabled = intake.disabled = generate.disabled = generating;
+      if (profile) profile.disabled = generating;
+    }
     function showChoices(decision = null) {
       choice = decision;
       intake.hidden = !!choice;
@@ -319,7 +353,7 @@
       active = null;
       if (activeAppend && hasPendingAppend()) $('appendStatus').textContent = '补充内容已保留，可以继续追加。';
       activeAppend = false;
-      $('appendSubmit').disabled = intake.disabled = generate.disabled = false;
+      setGenerating(false);
     }
     generateAppend = () => generateReport(null, true);
     appendInput.addEventListener('input', () => {
@@ -438,13 +472,16 @@
         return;
       }
       const rememberRequested = !!entered && remember.checked;
-      const requestedDate = parsed?.date || $('reportDate').value;
+      const requestBody = { note };
+      if (profile?.value === 'property-management') requestBody.profile = profile.value;
+      if (rememberRequested) requestBody.rememberDevice = true;
+      const selectedDate = $('reportDate').value;
       const revision = previewRevision;
       const controller = new AbortController();
       active = controller;
       activeAppend = appending;
       const timer = setTimeout(() => controller.abort(), 30000);
-      $('appendSubmit').disabled = intake.disabled = generate.disabled = true;
+      setGenerating(true);
       if (appending) localButton.hidden = true;
       message('');
       feedback.textContent = appending ? '正在整理补充内容…' : '正在生成日报…';
@@ -453,7 +490,7 @@
         const response = await fetch(endpoint, {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify(rememberRequested ? { note, rememberDevice: true } : { note }),
+          body: JSON.stringify(requestBody),
           signal: controller.signal,
           credentials: 'omit',
           redirect: 'error'
@@ -517,7 +554,7 @@
         if (appending) {
           appendPreview(newRows, note);
         } else {
-          showPreview({ ...newRows, date: C.validDate(requestedDate) ? requestedDate : C.today(), name: parsed?.name });
+          showPreview({ ...newRows, date: parsed?.date, name: parsed?.name }, selectedDate);
         }
         $('aiAccess').open = false;
         let rememberMessage = '';
@@ -549,13 +586,19 @@
           }
           active = null;
           activeAppend = false;
-          $('appendSubmit').disabled = intake.disabled = generate.disabled = false;
+          setGenerating(false);
         }
       }
     }
   }
-  $('date').addEventListener('change', () => { update(); stash(); });
-  $('name').addEventListener('input', () => { update(); stash(); });
+  $('date').addEventListener('change', () => {
+    if (previewTarget) previewTarget.dateEdited = true;
+    update(); stash();
+  });
+  $('name').addEventListener('input', () => {
+    if (previewTarget) previewTarget.nameEdited = true;
+    update(); stash();
+  });
   $('confirm').addEventListener('change', enableSave);
   async function copySavedReport(date) {
     const revision = previewRevision;
@@ -593,6 +636,10 @@
           if ($(id)) $(id).hidden = true;
         }
         dirty = false;
+        if (previewTarget) {
+          previewTarget.dateEdited = false;
+          previewTarget.nameEdited = false;
+        }
         try { sessionStorage.removeItem(draftKey); } catch { /* Records are already saved. */ }
         update();
         saveMessage(`已保存到 ${date}，新增 ${checked.added} 条，跳过重复 ${checked.skipped} 条。`);

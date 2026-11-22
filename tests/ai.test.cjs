@@ -21,7 +21,7 @@ async function requestWorker(options = {}) {
   const { default: worker } = await import('../ai-worker/worker.mjs');
   const headers = { Origin: origin, Authorization: 'Bearer ' + token, 'Content-Type': 'application/json', ...options.headers };
   return worker.fetch(new Request('https://worker.example/generate', {
-    method: 'POST', body: JSON.stringify({ note: options.note ?? note, rememberDevice: options.remember }), headers
+    method: 'POST', body: JSON.stringify({ note: options.note ?? note, profile: options.profile, rememberDevice: options.remember }), headers
   }), { ...env, ...options.env });
 }
 
@@ -65,6 +65,66 @@ test('Worker rejects unconfigured, unauthenticated, throttled and excessive requ
   assert.equal((await requestWorker({ note: '长'.repeat(1801) })).status, 400);
   assert.equal((await requestWorker({ env: { AI_RATE_LIMIT: { limit: async () => ({ success: false }) } } })).status, 429);
   assert.equal(fetch.mock.callCount(), 0);
+});
+
+test('the property-management preset keeps time blocks and removes weak-current-specific wording', async t => {
+  const rows = [
+    item('回复业主信息，沟通物业费。安排保洁清理落叶。', 'morning', '08:00', '10:00'),
+    item('回复业主信息，沟通物业费。', 'morning', '10:00', '12:00'),
+    item('查看锦园监控。', 'afternoon', '13:30', '15:00'),
+    item('前往田园。', 'afternoon', '17:00')
+  ];
+  const reportNote = [
+    '08:00—10:00 回复业主信息，沟通物业费。安排保洁清理落叶。',
+    '10:00—12:00 回复业主信息，沟通物业费。',
+    '13:30—15:00 查看锦园监控',
+    '17:00 去田园'
+  ].join('\n');
+  const call = t.mock.method(globalThis, 'fetch', async (_url, options) => {
+    const { messages } = JSON.parse(options.body);
+    assert.match(messages[0].content, /物业管理人员/);
+    assert.match(messages[0].content, /同一个明确时间段内的多件事写在同一条/);
+    assert.match(messages[0].content, /可能是/);
+    assert.match(messages[0].content, /收到.*物业费/);
+    assert.doesNotMatch(messages[0].content, /高翔|查看商云运行/);
+    assert.deepEqual(messages[1], { role: 'user', content: reportNote });
+    return Response.json({ choices: [{
+      finish_reason: 'stop', message: { content: JSON.stringify({ items: rows }) }
+    }] });
+  });
+  const response = await requestWorker({ profile: 'property-management', note: reportNote });
+  assert.equal(call.mock.callCount(), 1);
+  assert.equal(response.status, 200);
+  const { entries } = await response.json();
+  assert.deepEqual(entries.map(({ content, start, end }) => [content, start, end]),
+    rows.map(({ content, start, end }) => [content, start, end || '']));
+});
+
+test('AI remembers the selected preset in the same browser and includes it in generation', async () => {
+  const received = [];
+  const values = new Map();
+  const options = {
+    bulk: true, values,
+    aiFetch: async (_url, options) => {
+      received.push(JSON.parse(options.body));
+      return Response.json({ entries: [item('跟进业主报修。', 'morning', '08:00', '09:00')] });
+    }
+  };
+  const first = setup({}, options);
+  first.elements.aiProfile.value = 'property-management';
+  await first.elements.aiProfile.fire('change');
+
+  const reopened = setup({}, options);
+  assert.equal(reopened.elements.aiProfile.value, 'property-management');
+  reopened.elements.aiToken.value = token;
+  reopened.elements.source.value = '上午跟进业主报修';
+  await reopened.elements.intake.fire('click');
+  assert.equal(reopened.elements.preview.hidden, false);
+  assert.deepEqual(received[0], { note: '上午跟进业主报修', profile: 'property-management' });
+  reopened.elements.aiProfile.value = 'maintenance';
+  await reopened.elements.aiProfile.fire('change');
+  await reopened.elements.intake.fire('click');
+  assert.deepEqual(received[1], { note: '上午跟进业主报修' });
 });
 
 test('AI polishes terse work descriptions and keeps specific details and results', async t => {

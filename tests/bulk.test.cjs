@@ -47,6 +47,28 @@ test('indented numbered work starts a separate untimed entry', () => {
     ]);
   }
 });
+test('work ending in 工作汇报 keeps its time or list marker instead of becoming a name', () => {
+  const rows = '08:00—09:00 整理工作汇报\n（2）09:00—10:00 提交工作汇报';
+  for (const header of ['', '高翔工作汇报\n', '工作日报\n姓名：高翔\n']) {
+    const { mode, parsed } = B.inspectInput(header + rows);
+    assert.equal(mode, 'local');
+    assert.equal(parsed.name, header ? '高翔' : '');
+    assert.deepEqual(parsed.entries.map(({ start, end, content }) => [start, end, content]), [
+      ['08:00', '09:00', '整理工作汇报'], ['09:00', '10:00', '提交工作汇报']
+    ]);
+  }
+  const { mode, parsed } = B.inspectInput('1、整理工作汇报\n2、检修门禁');
+  assert.equal(mode, 'choose');
+  assert.equal(parsed.name, '');
+  assert.deepEqual(parsed.entries.map(e => e.content), ['1、整理工作汇报', '2、检修门禁']);
+  const separated = B.parse('高翔工作汇报\n08:00—09:00\n整理工作汇报\n补充当天巡查情况');
+  assert.equal(separated.entries[0].content, '整理工作汇报\n补充当天巡查情况');
+  const mixed = B.inspectInput('张三工作汇报\n08:00–09:00 巡查\n李四工作汇报\n09:00–10:00 核对');
+  assert.equal(mixed.mode, 'local');
+  assert.match(mixed.error.message, /姓名请放在日报开头/);
+  assert.throws(() => B.parse('08:00—09:00\n姓名：同事'), /姓名请放在日报开头/);
+  assert.throws(() => B.parse(rows + '\n姓名：同事'), /姓名请放在日报开头/);
+});
 test('invalid dates, multiple dates, invalid times and empty headings are never silently saved', () => {
   for (const input of ['日期：2026-02-30\n维修',source+'\n2026-11-03\n维修','25:00—26:00\n维修','12:00—08:00\n维修','8:99 维修','08:00—12:00','| 时间 | 内容 |']) assert.throws(() => B.parse(input));
   for (const input of ['1、8： 0 工作', '1、8： 00 - 11： 0 工作', '1、8： 00 - 11： 000 工作']) {

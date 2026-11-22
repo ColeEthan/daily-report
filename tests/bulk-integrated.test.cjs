@@ -64,3 +64,79 @@ test('reload restores every edited preview row while an incomplete row prevents 
   assert.deepEqual(reopened.saved().reports['2026-09-05'].entries.map(e => e.content),
     ['门禁故障，待厂家回复', '检查录像']);
 });
+
+test('regenerating with AI saves the new rows under the date and name edited in preview', async () => {
+  let calls = 0;
+  const app = setup({}, { bulk: true, aiFetch: async () => {
+    calls++;
+    const content = calls === 1 ? '查门禁' : '检查门禁';
+    return Response.json({ entries: [{ start: '08:00', end: '09:00', nextDay: false, content }] });
+  } });
+  const ui = app.elements;
+  await ui.bulkButton.fire('click');
+  ui.source.value = '上午查门禁';
+  await ui.source.fire('input');
+  ui.aiToken.value = 'local-test-token-for-regeneration';
+  await ui.intake.fire('click');
+  assert.equal(ui.preview.hidden, false);
+  ui.date.value = '2026-09-03';
+  await ui.date.fire('change');
+  ui.name.value = '补录人';
+  await ui.name.fire('input');
+  await ui.intake.fire('click');
+  assert.equal(calls, 2);
+  assert.equal(ui.save.disabled, false);
+  await ui.save.fire('click');
+  const { reports } = app.saved();
+  assert.deepEqual(Object.keys(reports), ['2026-09-03']);
+  assert.equal(reports['2026-09-03'].name, '补录人');
+  assert.deepEqual(reports['2026-09-03'].entries.map(row => row.content), ['检查门禁']);
+});
+
+test('reparsing the same pasted report retains manual metadata while a new report uses its own headers', async () => {
+  const options = { bulk: true, session: new Map(), values: new Map() };
+  const app = setup({}, options);
+  const ui = app.elements;
+  await ui.bulkButton.fire('click');
+  ui.source.value = '日期：2026-09-02\n姓名：原姓名\n08:00—09:00 巡查门禁';
+  await ui.source.fire('input');
+  await ui.parse.fire('click');
+  assert.deepEqual([ui.date.value, ui.name.value], ['2026-09-02', '原姓名']);
+  ui.date.value = '2026-09-01';
+  await ui.date.fire('change');
+  ui.name.value = '手动姓名';
+  await ui.name.fire('input');
+  ui.source.value += '设备';
+  await ui.source.fire('input');
+  await ui.parse.fire('click');
+  assert.deepEqual([ui.date.value, ui.name.value], ['2026-09-01', '手动姓名']);
+  ui.name.value = '';
+  await ui.name.fire('input');
+  await app.window.fire('pagehide');
+  const restored = setup({}, options).elements;
+  await restored.bulkButton.fire('click');
+  await restored.parse.fire('click');
+  assert.deepEqual([restored.date.value, restored.name.value], ['2026-09-01', '']);
+  restored.source.value = '日期：2026-09-04\n姓名：新姓名\n13:30—15:00 核对图纸';
+  await restored.source.fire('input');
+  await restored.parse.fire('click');
+  assert.deepEqual([restored.date.value, restored.name.value], ['2026-09-04', '新姓名']);
+});
+
+test('older preview drafts retain their selected target until a fresh report is started', async () => {
+  const row = { start: '08:00', end: '09:00', nextDay: false, content: '巡查门禁' };
+  const source = '日期：2026-09-02\n姓名：原姓名\n08:00—09:00 巡查门禁';
+  const session = new Map([['daily_report_bulk_draft_v1', JSON.stringify({
+    source, date: '2026-09-01', name: '', entries: [row], preview: true
+  })]]);
+  const app = setup({}, { bulk: true, session });
+  const ui = app.elements;
+  await ui.parse.fire('click');
+  assert.deepEqual([ui.date.value, ui.name.value], ['2026-09-01', '']);
+  ui.source.value = '';
+  await ui.source.fire('input');
+  ui.source.value = '13:30—14:00 检查监控';
+  await ui.source.fire('input');
+  await ui.parse.fire('click');
+  assert.equal(ui.date.value, ui.reportDate.value);
+});
